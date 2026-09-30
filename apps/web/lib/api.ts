@@ -5,6 +5,20 @@ function accessToken(): string | null {
   return sessionStorage.getItem("sf_access_token");
 }
 
+let refreshInFlight: Promise<string | null> | null = null;
+async function refreshAccess(): Promise<string | null> {
+  if (!refreshInFlight) {
+    refreshInFlight = (async () => {
+      const response = await fetch(`${API_URL}/v1/auth/refresh`, { method: "POST", credentials: "include" });
+      if (!response.ok) { sessionStorage.removeItem("sf_access_token"); return null; }
+      const body = await response.json() as { accessToken: string };
+      sessionStorage.setItem("sf_access_token", body.accessToken);
+      return body.accessToken;
+    })().finally(() => { refreshInFlight = null; });
+  }
+  return refreshInFlight;
+}
+
 export async function api<T>(path: string, init: RequestInit = {}, retry = true): Promise<T> {
   const token = accessToken();
   const headers = new Headers(init.headers);
@@ -18,15 +32,8 @@ export async function api<T>(path: string, init: RequestInit = {}, retry = true)
   });
 
   if (response.status === 401 && retry) {
-    const refreshed = await fetch(`${API_URL}/v1/auth/refresh`, {
-      method: "POST",
-      credentials: "include"
-    });
-    if (refreshed.ok) {
-      const body = await refreshed.json() as { accessToken: string };
-      sessionStorage.setItem("sf_access_token", body.accessToken);
-      return api<T>(path, init, false);
-    }
+    // A stale in-flight request may finish after another request already refreshed.
+    if (accessToken() !== token || await refreshAccess()) return api<T>(path, init, false);
   }
 
   if (!response.ok) {

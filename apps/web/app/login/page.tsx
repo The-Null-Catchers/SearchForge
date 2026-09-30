@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 
@@ -16,6 +17,7 @@ export default function LoginPage() {
     setLoading(true);
     setError("");
     const form = new FormData(event.currentTarget);
+    try {
     const response = await fetch(`${API_URL}/v1/auth/${mode}`, {
       method: "POST",
       credentials: "include",
@@ -34,6 +36,9 @@ export default function LoginPage() {
     }
     sessionStorage.setItem("sf_access_token", body.accessToken);
     router.push("/dashboard");
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "Unable to sign in. Please try again.");
+    } finally { setLoading(false); }
   };
 
   return (
@@ -46,6 +51,7 @@ export default function LoginPage() {
         <div className="field"><label>Password</label><input className="input" name="password" type="password" minLength={10} required /></div>
         {error && <div style={{color:"var(--danger)",fontSize:13}}>{error}</div>}
         <button className="btn primary" disabled={loading}>{loading ? "Working…" : mode === "login" ? "Sign in" : "Create account"}</button>
+        {mode === "login" && <Link className="btn" href="/forgot-password">Forgot password?</Link>}
         <button className="btn" type="button" onClick={() => setMode(mode === "login" ? "register" : "login")}>{mode === "login" ? "Need an account?" : "Already have an account?"}</button>
       </form>
     </main>

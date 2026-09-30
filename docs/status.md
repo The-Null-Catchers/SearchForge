@@ -10,6 +10,7 @@ engine is used. Rust/Go search nodes are future extensions, not implemented.
 - Immutable segment creation, corruption detection and exclusive publication.
 - Authentication route contracts and secure refresh-cookie attributes.
 - JavaScript SDK search, suggestions, indexing, clicks, cancellation and errors.
+- Shared browser refresh coordination (concurrent/late 401 regression tests).
 - URL normalization, private-network checks and robots parsing.
 - DNS-pinned HTTP transport, redirect checks and bounded gzip sitemap parsing.
 - Monorepo application builds and type checking.
@@ -17,6 +18,7 @@ engine is used. Rust/Go search nodes are future extensions, not implemented.
 ## Implemented, integration verification required
 
 - Registration, organizations/projects, project-scoped hashed keys.
+- Account recovery and email verification pages.
 - Refresh rotation serialized with row locks and family revocation on reuse.
 - Job reads and SSE checked against organization membership.
 - Async document indexing, version activation and rollback.
@@ -34,7 +36,7 @@ explicit verification.
 - Scheduler, cancellation, transactional queue outbox and cleanup lifecycle.
 - Compound AND/OR and date filters, query-bound cursors, normalized highlighting
   and efficient typo dictionaries for large vocabularies.
-- Complete account recovery/verification UI, ranking/settings/logs workflows,
+- Complete ranking/settings/logs workflows,
   index/document explorer and privacy-aware analytics charts.
 - Key-specific/project quotas, expiration/IP configuration UI and notifications.
 - Seed dataset, embeddable UI, backup scripts, OpenTelemetry, browser E2E,

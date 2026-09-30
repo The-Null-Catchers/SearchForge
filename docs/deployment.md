@@ -24,7 +24,8 @@ migrations must not be edited. Create a new numbered SQL migration instead.
 
 All application images use frozen dependencies and run as the node user. Index
 segments live in a shared persistent volume. PostgreSQL, Redis and index storage
-must survive container replacement. MinIO is provisioned for future raw HTML and
+must survive container replacement. MinIO is built from the pinned upstream source release because the old public
+image is unavailable. Its AGPL license is included in the image. It is provisioned for future raw HTML and
 object storage use; current search segments use the persistent filesystem.
 
 Prometheus stays internal; /metrics is not routed by Caddy. Bind the optional
