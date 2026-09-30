@@ -15,6 +15,26 @@ concurrency:
 jobs:
   node:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: searchforge
+          POSTGRES_PASSWORD: integration
+          POSTGRES_DB: searchforge
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U searchforge"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      POSTGRES_URL: postgresql://searchforge:integration@localhost:5432/searchforge
+      REDIS_URL: redis://localhost:6379
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
@@ -26,10 +46,13 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - run: pnpm install --no-frozen-lockfile
+      - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - run: pnpm test
       - run: pnpm typecheck
+      - run: pnpm db:migrate
+      - run: pnpm db:migrate
+      - run: node tests/integration/platform.mjs
 
   security-baseline:
     runs-on: ubuntu-latest
@@ -44,3 +67,16 @@ jobs:
           fi
       - name: Ensure crawler SSRF regression tests exist
         run: test -f apps/crawler/src/url.test.ts
+
+  dart-sdk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: packages/sdk-flutter
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+      - run: dart pub get
+      - run: dart analyze --fatal-infos
+      - run: dart test

@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, link, unlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { IndexSettings } from "@searchforge/shared";
 import { Analyzer } from "./analyzer.js";
@@ -109,6 +109,9 @@ export class FileSegmentStore {
   constructor(private readonly root: string) {}
 
   private file(indexId: string, version: string): string {
+    if (!/^[A-Za-z0-9_-]+$/.test(indexId) || !/^[A-Za-z0-9_-]+$/.test(version)) {
+      throw new Error("Invalid index storage identifier");
+    }
     return join(this.root, indexId, `${version}.segment.json`);
   }
 
@@ -118,7 +121,12 @@ export class FileSegmentStore {
     const temp = `${target}.tmp-${randomUUID()}`;
     await mkdir(dirname(target), { recursive: true });
     await writeFile(temp, JSON.stringify(segment), { encoding: "utf8", flag: "wx" });
-    await rename(temp, target);
+    try {
+      // Atomic exclusive publication: an existing immutable version is never replaced.
+      await link(temp, target);
+    } finally {
+      await unlink(temp);
+    }
     return target;
   }
 

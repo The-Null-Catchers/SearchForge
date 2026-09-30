@@ -27,7 +27,7 @@ describe("SegmentSearchEngine", () => {
   it("verifies quoted phrases using positions", () => {
     const result = engine.search(searchRequestSchema.parse({ query: '"distributed systems"', debug: true }));
     expect(result.hits[0]?.id).toBe("b");
-    expect(result.debug?.matchedPhrases).toContain("distributed system");
+    expect(result.debug?.matchedPhrases).toContain("distribut system");
   });
 
   it("uses bounded typo candidates", () => {

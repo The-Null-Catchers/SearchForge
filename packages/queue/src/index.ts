@@ -1,5 +1,5 @@
 import { Queue, type JobsOptions } from "bullmq";
-import IORedis from "ioredis";
+import { Redis as IORedis } from "ioredis";
 
 export const queueNames = [
   "crawl",

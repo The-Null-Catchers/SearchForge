@@ -165,51 +165,33 @@ export class AuthService {
 
   async refresh(token: string, userAgent?: string, ip?: string) {
     const digest = this.digest(token);
-    const [session] = await this.db.select().from(refreshSessions).where(eq(refreshSessions.tokenDigest, digest)).limit(1);
-    if (!session) throw new AppError("UNAUTHENTICATED", "Invalid refresh token", 401);
-
-    if (session.revokedAt || session.rotatedAt) {
-      await this.db.update(refreshSessions)
-        .set({ revokedAt: new Date() })
-        .where(and(eq(refreshSessions.familyId, session.familyId), isNull(refreshSessions.revokedAt)));
-      throw new AppError("UNAUTHENTICATED", "Refresh token reuse detected; session family revoked", 401);
-    }
-    if (session.expiresAt.getTime() <= Date.now()) {
-      throw new AppError("UNAUTHENTICATED", "Refresh token expired", 401);
-    }
-
-    const [user] = await this.db.select({
-      id: users.id,
-      email: users.email,
-      displayName: users.displayName
-    }).from(users).where(eq(users.id, session.userId)).limit(1);
-    if (!user) throw new AppError("UNAUTHENTICATED", "User no longer exists", 401);
-
-    const nextToken = this.makeRefreshToken();
-    const nextDigest = this.digest(nextToken);
-    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-
-    await this.db.transaction(async (tx) => {
-      await tx.update(refreshSessions)
-        .set({ rotatedAt: new Date() })
-        .where(and(eq(refreshSessions.id, session.id), isNull(refreshSessions.rotatedAt)));
+    const outcome = await this.db.transaction(async (tx) => {
+      const [session] = await tx.select().from(refreshSessions)
+        .where(eq(refreshSessions.tokenDigest, digest)).limit(1).for("update");
+      if (!session) return { error: "Invalid refresh token" } as const;
+      if (session.revokedAt || session.rotatedAt) {
+        await tx.update(refreshSessions).set({ revokedAt: new Date() })
+          .where(and(eq(refreshSessions.familyId, session.familyId), isNull(refreshSessions.revokedAt)));
+        // Return, then throw outside the transaction so family revocation commits.
+        return { error: "Refresh token reuse detected; session family revoked" } as const;
+      }
+      if (session.expiresAt.getTime() <= Date.now()) return { error: "Refresh token expired" } as const;
+      const [user] = await tx.select({ id: users.id, email: users.email, displayName: users.displayName })
+        .from(users).where(eq(users.id, session.userId)).limit(1);
+      if (!user) return { error: "User no longer exists" } as const;
+      const nextToken = this.makeRefreshToken();
+      const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+      await tx.update(refreshSessions).set({ rotatedAt: new Date() }).where(eq(refreshSessions.id, session.id));
       await tx.insert(refreshSessions).values({
-        userId: session.userId,
-        familyId: session.familyId,
-        tokenDigest: nextDigest,
-        parentTokenDigest: digest,
-        ...(userAgent ? { userAgent } : {}),
-        ...(ip ? { ip } : {}),
-        expiresAt
+        userId: session.userId, familyId: session.familyId,
+        tokenDigest: this.digest(nextToken), parentTokenDigest: digest,
+        ...(userAgent ? { userAgent } : {}), ...(ip ? { ip } : {}), expiresAt
       });
+      return { user, nextToken, expiresAt };
     });
-
-    return {
-      user,
-      accessToken: await this.accessToken(user.id),
-      refreshToken: nextToken,
-      refreshExpiresAt: expiresAt
-    };
+    if ("error" in outcome) throw new AppError("UNAUTHENTICATED", outcome.error!, 401);
+    return { user: outcome.user, accessToken: await this.accessToken(outcome.user.id),
+      refreshToken: outcome.nextToken, refreshExpiresAt: outcome.expiresAt };
   }
 
   async logout(token: string): Promise<void> {

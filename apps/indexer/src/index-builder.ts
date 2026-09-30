@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import {
   documents,
   indexVersions,
@@ -9,7 +9,7 @@ import {
 } from "@searchforge/db";
 import { buildSegment, FileSegmentStore, validateSegment, type SearchDocument } from "@searchforge/search-core";
 import { indexSettingsSchema } from "@searchforge/shared";
-import type IORedis from "ioredis";
+import type { Redis as IORedis } from "ioredis";
 
 type Db = ReturnType<typeof createDatabase>["db"];
 
@@ -30,6 +30,18 @@ export class IndexBuilder {
   }
 
   async build(databaseJobId: string, projectId: string, indexId: string) {
+    // A PostgreSQL lock coordinates all indexer processes, including retries.
+    return this.db.transaction(async (lock) => {
+      await lock.execute(sql`select pg_advisory_xact_lock(hashtextextended(${indexId}, 0))`);
+      const [job] = await this.db.select().from(jobs).where(and(eq(jobs.id, databaseJobId), eq(jobs.projectId, projectId))).limit(1);
+      if (!job || job.indexId !== indexId) throw new Error("Index job not found");
+      if (job.state === "cancelled") return { cancelled: true };
+      if (job.state === "completed") return job.progress;
+      return this.buildLocked(databaseJobId, projectId, indexId);
+    });
+  }
+
+  private async buildLocked(databaseJobId: string, projectId: string, indexId: string) {
     const [index] = await this.db.select().from(indexes)
       .where(and(eq(indexes.id, indexId), eq(indexes.projectId, projectId)))
       .limit(1);

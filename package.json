@@ -8,7 +8,8 @@
     "test": "turbo test",
     "lint": "turbo lint",
     "typecheck": "turbo typecheck",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "db:migrate": "pnpm --filter @searchforge/db migrate"
   },
   "devDependencies": {
     "prettier": "^3.6.2",

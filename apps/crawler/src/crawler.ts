@@ -11,7 +11,7 @@ import {
 } from "@searchforge/db";
 import { crawlConfigSchema, type CrawlConfig } from "@searchforge/shared";
 import type { Queue } from "bullmq";
-import type IORedis from "ioredis";
+import type { Redis as IORedis } from "ioredis";
 import { extractHtml, hammingDistance, simHash64 } from "./extract.js";
 import { safeFetch } from "./fetch.js";
 import { RobotsPolicy } from "./robots.js";

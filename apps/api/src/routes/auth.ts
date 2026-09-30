@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { z } from "zod";
+import { AppError } from "@searchforge/shared";
 import type { AuthService } from "../auth.js";
 import type { Mailer } from "../mailer.js";
 
@@ -10,7 +11,7 @@ const credentials = z.object({
 });
 
 function bearer(header: string | undefined): string {
-  if (!header?.startsWith("Bearer ")) throw new Error("Missing bearer token");
+  if (!header?.startsWith("Bearer ")) throw new AppError("UNAUTHENTICATED", "Bearer access token required", 401);
   return header.slice(7);
 }
 

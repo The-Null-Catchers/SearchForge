@@ -44,34 +44,34 @@ flowchart LR
 - English + Arabic analyzers, configurable Arabic normalization, light stemming, field-aware inverted index, positional postings, BM25, phrase matching, prefix search, typo-aware term expansion, filters, facets, safe highlight ranges, autocomplete, and explain output.
 - BullMQ queues for crawl/fetch/extract/normalize/index/merge/analytics/cleanup.
 - Atomic index-version activation and rollback semantics in metadata.
-- REST API, JavaScript SDK, Flutter SDK skeleton, dashboard, health/readiness, Prometheus metrics, structured errors, request IDs, Docker Compose, and CI.
+- REST API, JavaScript SDK, Dart SDK, dashboard, health/readiness, Prometheus metrics, structured errors, request IDs, Docker Compose, and CI.
 
 ## Quick start
 
 ```bash
 cp .env.example .env
-corepack enable
-pnpm install
-docker compose up -d postgres redis minio
-pnpm dev
-```
-
-Full container stack:
-
-```bash
 docker compose up --build
 ```
 
-Observability profile:
+The one-shot migration service applies checked-in SQL before the API and workers
+start. Open `http://localhost` through Caddy; browser API requests use the same
+origin. Register, create an organization and project, then add a website or use
+a private indexing key to push documents. Keep returned API keys somewhere safe;
+plaintext keys are returned only once.
+
+Add metrics and dashboards with:
 
 ```bash
 docker compose --profile observability up --build
 ```
 
-API: `http://localhost:4000`  
-Dashboard: `http://localhost:3000`  
 MinIO console: `http://localhost:9001`  
-Grafana (full profile): `http://localhost:3001`
+Grafana: `http://localhost:3001`
+
+For host-based development, publish PostgreSQL and Redis using the development
+override described in [docs/development.md](docs/development.md), then build,
+migrate and run the apps. See [docs/deployment.md](docs/deployment.md) before
+configuring a VPS.
 
 ## Search request
 

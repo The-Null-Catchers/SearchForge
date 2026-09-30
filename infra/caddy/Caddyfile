@@ -2,10 +2,10 @@
   email {$ACME_EMAIL}
 }
 
-{$SEARCHFORGE_DOMAIN:localhost} {
+{$SEARCHFORGE_DOMAIN::80} {
   encode zstd gzip
 
-  @api path /api/* /v1/* /health* /metrics
+  @api path /api/* /v1/* /health*
   handle @api {
     reverse_proxy api:4000
   }

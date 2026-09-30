@@ -3,7 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { indexVersions, indexes, projects, searchClicks, searchEvents, synonymSets, type createDatabase } from "@searchforge/db";
 import { AppError, searchRequestSchema } from "@searchforge/shared";
 import { z } from "zod";
-import type IORedis from "ioredis";
+import type { Redis as IORedis } from "ioredis";
 import type { ApiKeyService } from "../api-keys.js";
 import type { SearchRuntime } from "../search-runtime.js";
 

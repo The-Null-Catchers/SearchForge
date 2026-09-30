@@ -13,6 +13,7 @@ export class SearchRuntime {
     const cached = this.cache.get(key);
     if (cached) return cached;
     const segment = await this.store.read(indexId, version);
+    if (checksum && checksum !== segment.checksum) throw new Error("Index manifest checksum mismatch");
     this.cache.set(key, segment);
     if (this.cache.size > 32) this.cache.delete(this.cache.keys().next().value as string);
     return segment;
