@@ -9,8 +9,15 @@ const schema = z.object({
   JWT_REFRESH_SECRET: z.string().min(32),
   API_KEY_PEPPER: z.string().min(16),
   WEB_ORIGIN: z.string().url().default("http://localhost:3000"),
-  INDEX_STORAGE_PATH: z.string().default("./storage/indexes")
+  INDEX_STORAGE_PATH: z.string().default("./storage/indexes"),
+  PUBLIC_WEB_URL: z.string().url().default("http://localhost:3000"),
+  SMTP_URL: z.string().min(1).optional(),
+  MAIL_FROM: z.string().default("SearchForge <no-reply@localhost>")
 });
 
 export type Config = z.infer<typeof schema>;
-export const config = schema.parse(process.env);
+export const config = schema.superRefine((value, ctx) => {
+  if (value.NODE_ENV === "production" && !value.SMTP_URL) {
+    ctx.addIssue({ code: "custom", path: ["SMTP_URL"], message: "SMTP_URL is required in production for verification and password reset" });
+  }
+}).parse(process.env);

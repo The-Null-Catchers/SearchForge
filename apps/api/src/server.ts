@@ -13,6 +13,7 @@ import { ApiKeyService } from "./api-keys.js";
 import { AuthService } from "./auth.js";
 import { config } from "./config.js";
 import { SearchRuntime } from "./search-runtime.js";
+import { Mailer } from "./mailer.js";
 import { authRoutes } from "./routes/auth.js";
 import { projectRoutes } from "./routes/projects.js";
 import { searchRoutes } from "./routes/search.js";
@@ -37,6 +38,7 @@ export async function buildServer() {
   const auth = new AuthService(db, config);
   const keys = new ApiKeyService(db, config);
   const runtime = new SearchRuntime(config.INDEX_STORAGE_PATH);
+  const mailer = new Mailer(config);
 
   await app.register(cookie);
   await app.register(cors, {
@@ -101,7 +103,7 @@ export async function buildServer() {
     return metrics.metrics();
   });
 
-  await authRoutes(app, auth, config.NODE_ENV === "production");
+  await authRoutes(app, auth, mailer, config.NODE_ENV === "production");
   await projectRoutes(app, db, auth, keys);
   await searchRoutes(app, db, redis, keys, runtime);
   await documentRoutes(app, db, keys, queues.index);
@@ -143,6 +145,7 @@ export async function buildServer() {
   app.addHook("onClose", async () => {
     await Promise.all(Object.values(queues).map((queue) => queue.close()));
     await redis.quit();
+    await mailer.close();
     await pool.end();
   });
 

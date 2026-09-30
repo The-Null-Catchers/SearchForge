@@ -2,7 +2,7 @@ import { createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypt
 import argon2 from "argon2";
 import { SignJWT, jwtVerify } from "jose";
 import { and, eq, isNull } from "drizzle-orm";
-import { refreshSessions, users, type createDatabase } from "@searchforge/db";
+import { oneTimeTokens, refreshSessions, users, type createDatabase } from "@searchforge/db";
 import { AppError } from "@searchforge/shared";
 import type { Config } from "./config.js";
 
@@ -39,6 +39,58 @@ export class AuthService {
 
   private makeRefreshToken(): string {
     return randomBytes(48).toString("base64url");
+  }
+
+  private oneTimeDigest(purpose: string, token: string): string {
+    return createHmac("sha256", this.config.JWT_REFRESH_SECRET).update(`${purpose}:${token}`).digest("hex");
+  }
+
+  async findUserByEmail(email: string) {
+    const [user] = await this.db.select({ id: users.id, email: users.email, emailVerifiedAt: users.emailVerifiedAt })
+      .from(users).where(eq(users.email, email.trim().toLowerCase())).limit(1);
+    return user;
+  }
+
+  async createOneTimeToken(userId: string, purpose: "verify_email" | "reset_password", ttlMinutes: number): Promise<string> {
+    const token = randomBytes(32).toString("base64url");
+    await this.db.insert(oneTimeTokens).values({
+      userId,
+      purpose,
+      tokenDigest: this.oneTimeDigest(purpose, token),
+      expiresAt: new Date(Date.now() + ttlMinutes * 60_000)
+    });
+    return token;
+  }
+
+  async consumeOneTimeToken(token: string, purpose: "verify_email" | "reset_password"): Promise<string> {
+    const digest = this.oneTimeDigest(purpose, token);
+    const [record] = await this.db.select().from(oneTimeTokens).where(eq(oneTimeTokens.tokenDigest, digest)).limit(1);
+    if (!record || record.purpose !== purpose || record.usedAt || record.expiresAt.getTime() <= Date.now()) {
+      throw new AppError("UNAUTHENTICATED", "The token is invalid or expired", 401);
+    }
+    const updated = await this.db.update(oneTimeTokens).set({ usedAt: new Date() })
+      .where(and(eq(oneTimeTokens.id, record.id), isNull(oneTimeTokens.usedAt)))
+      .returning({ id: oneTimeTokens.id });
+    if (updated.length !== 1) throw new AppError("UNAUTHENTICATED", "The token has already been used", 401);
+    return record.userId;
+  }
+
+  async verifyEmail(userId: string): Promise<void> {
+    await this.db.update(users).set({ emailVerifiedAt: new Date(), updatedAt: new Date() }).where(eq(users.id, userId));
+  }
+
+  async resetPassword(userId: string, password: string): Promise<void> {
+    const passwordHash = await argon2.hash(password, {
+      type: argon2.argon2id,
+      memoryCost: 19_456,
+      timeCost: 2,
+      parallelism: 1
+    });
+    await this.db.transaction(async (tx) => {
+      await tx.update(users).set({ passwordHash, updatedAt: new Date() }).where(eq(users.id, userId));
+      await tx.update(refreshSessions).set({ revokedAt: new Date() })
+        .where(and(eq(refreshSessions.userId, userId), isNull(refreshSessions.revokedAt)));
+    });
   }
 
   async register(email: string, password: string, displayName?: string) {
