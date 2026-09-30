@@ -1,0 +1,107 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "feat/**", "fix/**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  node:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: searchforge
+          POSTGRES_PASSWORD: integration
+          POSTGRES_DB: searchforge
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U searchforge"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+      smtp:
+        image: axllent/mailpit:latest
+        ports: ["1025:1025"]
+    env:
+      SMTP_URL: smtp://localhost:1025
+      POSTGRES_URL: postgresql://searchforge:integration@localhost:5432/searchforge
+      REDIS_URL: redis://localhost:6379
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.1
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm test
+      - run: pnpm typecheck
+      - run: pnpm db:migrate
+      - run: pnpm db:migrate
+      - run: node tests/integration/platform.mjs
+
+  security-baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject committed environment secrets
+        run: |
+          if git ls-files | grep -E '(^|/)\.env($|\.)' | grep -v '\.env\.example$'; then
+            echo "Committed environment file detected"
+            exit 1
+          fi
+      - name: Ensure crawler SSRF regression tests exist
+        run: test -f apps/crawler/src/url.test.ts
+
+  dart-sdk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: packages/sdk-flutter
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+      - run: dart pub get
+      - run: dart analyze --fatal-infos
+      - run: dart test
+
+  container-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - run: cp .env.example .env
+      - name: Build and start the development stack
+        run: docker compose up -d --build --wait --wait-timeout 180
+      - name: Verify routed API and dashboard
+        run: |
+          curl --fail --retry 10 --retry-delay 2 http://localhost/health/ready
+          curl --fail http://localhost/login
+      - name: Capture service logs
+        if: always()
+        run: |
+          docker compose logs --tail=100
+          docker compose ps -aq | xargs -r docker inspect --format '{{.Name}} {{json .State.Health}}'
+      - name: Stop disposable stack
+        if: always()
+        run: docker compose down -v

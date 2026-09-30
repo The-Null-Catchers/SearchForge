@@ -1,0 +1,10 @@
+# Host-based development; bind infrastructure only to loopback.
+services:
+  postgres:
+    ports: ["127.0.0.1:5432:5432"]
+  redis:
+    ports: ["127.0.0.1:6379:6379"]
+  minio:
+    ports: ["127.0.0.1:9000:9000"]
+  mailpit:
+    ports: ["127.0.0.1:1025:1025"]

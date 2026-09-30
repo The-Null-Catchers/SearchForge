@@ -1,0 +1,192 @@
+name: searchforge
+
+x-app-env: &app-env
+  NODE_ENV: ${NODE_ENV:-development}
+  POSTGRES_URL: ${POSTGRES_URL:-postgresql://searchforge:searchforge@postgres:5432/searchforge}
+  REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+  MINIO_ENDPOINT: ${MINIO_ENDPOINT:-http://minio:9000}
+  MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-searchforge}
+  MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-searchforge-local}
+  MINIO_BUCKET: ${MINIO_BUCKET:-searchforge}
+  INDEX_STORAGE_PATH: ${INDEX_STORAGE_PATH:-/data/indexes}
+  JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-local-development-access-secret-change-me-123456}
+  JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-local-development-refresh-secret-change-me-123456}
+  API_KEY_PEPPER: ${API_KEY_PEPPER:-local-development-api-key-pepper}
+  TRUST_PROXY_HOPS: 1
+  WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:3000}
+  PUBLIC_WEB_URL: ${PUBLIC_WEB_URL:-http://localhost:3000}
+  SMTP_URL: ${SMTP_URL:-}
+  MAIL_FROM: ${MAIL_FROM:-SearchForge <no-reply@localhost>}
+
+services:
+  postgres:
+    restart: unless-stopped
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: searchforge
+      POSTGRES_USER: searchforge
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-searchforge}
+    volumes: [postgres_data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U searchforge"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    restart: unless-stopped
+    image: redis:8-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes: [redis_data:/data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  mailpit:
+    profiles: ["development"]
+    image: axllent/mailpit:latest
+    ports: ["127.0.0.1:8025:8025"]
+
+  minio:
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: infra/docker/minio.Dockerfile
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-searchforge}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-searchforge-local}
+    ports: ["9001:9001"]
+    volumes: [minio_data:/data]
+
+  migrate:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      POSTGRES_URL: ${POSTGRES_URL:-postgresql://searchforge:searchforge@postgres:5432/searchforge}
+    command: ["node", "packages/db/dist/migrate.js"]
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  api:
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      <<: *app-env
+      PORT: 4000
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+    volumes: [index_data:/data/indexes]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4000/health/live"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  crawler:
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: apps/crawler/Dockerfile
+    environment:
+      <<: *app-env
+      CRAWLER_USER_AGENT: ${CRAWLER_USER_AGENT:-SearchForgeBot/1.0}
+      CRAWLER_ALLOW_PRIVATE_NETWORKS: ${CRAWLER_ALLOW_PRIVATE_NETWORKS:-false}
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+
+  indexer:
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: apps/indexer/Dockerfile
+    environment:
+      <<: *app-env
+      PORT: 4020
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+    volumes: [index_data:/data/indexes]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4020/health/live"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  worker:
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    environment:
+      <<: *app-env
+      PORT: 4030
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+    volumes: [index_data:/data/indexes]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4030/health/live"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  web:
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-}
+    environment:
+      NODE_ENV: production
+    depends_on:
+      api: { condition: service_healthy }
+
+  caddy:
+    restart: unless-stopped
+    image: caddy:2-alpine
+    environment:
+      SEARCHFORGE_DOMAIN: ${SEARCHFORGE_DOMAIN:-:80}
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [web, api]
+
+  prometheus:
+    restart: unless-stopped
+    profiles: ["observability"]
+    image: prom/prometheus:latest
+    volumes:
+      - ./infra/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+
+  grafana:
+    restart: unless-stopped
+    profiles: ["observability"]
+    image: grafana/grafana:latest
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+    volumes: [grafana_data:/var/lib/grafana]
+    ports: ["3001:3000"]
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
+  caddy_data:
+  caddy_config:
+  grafana_data:
+  index_data:
