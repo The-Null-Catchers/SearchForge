@@ -161,7 +161,7 @@ try {
   const entry = (await pool.query('SELECT dispatched_at FROM job_outbox WHERE job_id = $1', [queued.jobId])).rows[0];
   assert.equal(entry.dispatched_at, null);
   await dispatcher.dispatch();
-  const matching = (await queues.index.getJobs(['waiting', 'paused'])).filter(job => job.data.databaseJobId === queued.jobId);
+  const matching = (await queues.index.getJobs(['waiting', 'paused', 'prioritized'])).filter(job => job.data.databaseJobId === queued.jobId);
   assert.equal(matching.length, 1);
   startDispatch();
   const inaccessible = await app.inject({ method: 'POST', url: `/v1/jobs/${queued.jobId}/cancel`, headers: { authorization: `Bearer ${stranger.accessToken}` } });
