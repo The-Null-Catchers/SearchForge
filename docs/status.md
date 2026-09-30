@@ -28,14 +28,14 @@ engine is used. Rust/Go search nodes are future extensions, not implemented.
 
 Integration CI passed registration, tenant isolation, async indexing, bilingual search,
 rebuild/rollback, incremental crawling and refresh-token reuse detection. Dart analysis
-and three SDK tests passed. The latest local run passed 30 unit tests, builds and
+and three SDK tests passed. The latest local run and CI passed 30 unit tests, builds and
 type checking.
 
 Account recovery/verification pages and container startup still require end-to-end
-verification. Container CI initially failed pulling the discontinued MinIO image;
-a pinned upstream source build replaces it. The following Actions run failed at
-startup before any jobs ran, with a GitHub internal error. No successful Docker
-smoke result is claimed. Browser E2E remains release work.
+verification. All container images built successfully in CI, including the pinned MinIO
+source build. Compose exposed a localhost health-probe address mismatch; explicit
+IPv4 loopback probes replace localhost. Full startup verification is pending the
+next smoke run. No successful Docker smoke result is claimed. Browser E2E remains release work.
 
 ## Remaining before MVP release
 

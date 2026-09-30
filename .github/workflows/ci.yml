@@ -99,7 +99,9 @@ jobs:
           curl --fail http://localhost/login
       - name: Capture service logs
         if: always()
-        run: docker compose logs --tail=100
+        run: |
+          docker compose logs --tail=100
+          docker compose ps -aq | xargs -r docker inspect --format '{{.Name}} {{json .State.Health}}'
       - name: Stop disposable stack
         if: always()
         run: docker compose down -v
