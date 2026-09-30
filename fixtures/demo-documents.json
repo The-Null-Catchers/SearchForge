@@ -1,0 +1,10 @@
+[
+  {"id":"search-en","title":"JavaScript search engine","content":"Build a lexical search engine with inverted indexes, BM25 ranking and typo tolerance.","language":"en","tags":["search","javascript"],"published":true,"publishedAt":"2026-09-01","metadata":{"category":"docs"}},
+  {"id":"distributed-en","title":"Distributed systems","content":"Queues, workers, idempotency and atomic index activation keep distributed search systems reliable.","language":"en","tags":["architecture"],"published":true,"metadata":{"category":"docs"}},
+  {"id":"crawler-en","title":"Crawling websites safely","content":"Respect robots.txt, parse sitemaps and validate DNS addresses before crawling websites.","language":"en","tags":["crawler","security"],"published":true,"metadata":{"category":"guides"}},
+  {"id":"database-en","title":"Introduction to databases","content":"PostgreSQL stores organization metadata, project settings and durable indexing jobs.","language":"en","tags":["postgresql"],"published":false,"metadata":{"category":"blog"}},
+  {"id":"search-ar","title":"محرك بحث عربي","content":"بناء محركات البحث باستخدام الفهرس المعكوس وترتيب النتائج ومعالجة اللغة العربية.","language":"ar","tags":["بحث","عربي"],"published":true,"metadata":{"category":"docs"}},
+  {"id":"normalization-ar","title":"تطبيع النص العربي","content":"توحيد أشكال الألف أ إ آ ا وإزالة التشكيل والتطويل مع الحفاظ على معنى الكلمات.","language":"ar","tags":["عربي","لغة"],"published":true,"metadata":{"category":"guides"}},
+  {"id":"queues-ar","title":"الطوابير والعمال","content":"تنفذ المهام الثقيلة في الخلفية وتعرض حالة الفهرسة ومراحل الزحف في الوقت الحقيقي.","language":"ar","tags":["عمال"],"published":true,"metadata":{"category":"docs"}},
+  {"id":"mixed","title":"SearchForge بحث للمطورين","content":"Arabic and English search with BM25 يدعم الاستعلامات العربية والإنجليزية والفلاتر والاقتراحات.","language":"mixed","tags":["search","بحث"],"published":true,"metadata":{"category":"guides"}}
+]

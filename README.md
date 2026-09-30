@@ -106,3 +106,8 @@ See [docs/security.md](docs/security.md) and [docs/architecture.md](docs/archite
 ## Roadmap
 
 MVP focuses on lexical retrieval. The core exposes boundaries for sharding, replica selection, vector stores, hybrid fusion, external source connectors, and ranking experiments without making them mandatory.
+
+## SDKs and demo corpus
+
+See [SDK usage](docs/sdk.md), [demo and benchmarks](docs/benchmarking.md) and
+[implementation status](docs/status.md). SDK packages are not published yet.

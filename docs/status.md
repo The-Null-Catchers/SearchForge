@@ -15,10 +15,9 @@ engine is used. Rust/Go search nodes are future extensions, not implemented.
 - DNS-pinned HTTP transport, redirect checks and bounded gzip sitemap parsing.
 - Monorepo application builds and type checking.
 
-## Implemented, integration verification required
+## Verified by PostgreSQL/Redis integration CI
 
 - Registration, organizations/projects, project-scoped hashed keys.
-- Account recovery and email verification pages.
 - Refresh rotation serialized with row locks and family revocation on reuse.
 - Job reads and SSE checked against organization membership.
 - Async document indexing, version activation and rollback.
@@ -27,8 +26,16 @@ engine is used. Rust/Go search nodes are future extensions, not implemented.
 - Incremental conditional recrawl with stored links for 304 responses.
 - Dart SDK search/filter/pagination/autocomplete/click/error handling (CI passed).
 
-CI includes isolated PostgreSQL/Redis integration tests and Dart tests. Container builds and Compose startup have a CI smoke job; browser E2E still needs
-explicit verification.
+Integration CI passed registration, tenant isolation, async indexing, bilingual search,
+rebuild/rollback, incremental crawling and refresh-token reuse detection. Dart analysis
+and three SDK tests passed. The latest local run passed 30 unit tests, builds and
+type checking.
+
+Account recovery/verification pages and container startup still require end-to-end
+verification. Container CI initially failed pulling the discontinued MinIO image;
+a pinned upstream source build replaces it. The following Actions run failed at
+startup before any jobs ran, with a GitHub internal error. No successful Docker
+smoke result is claimed. Browser E2E remains release work.
 
 ## Remaining before MVP release
 
@@ -39,7 +46,7 @@ explicit verification.
 - Complete ranking/settings/logs workflows,
   index/document explorer and privacy-aware analytics charts.
 - Key-specific/project quotas, expiration/IP configuration UI and notifications.
-- Seed dataset, embeddable UI, backup scripts, OpenTelemetry, browser E2E,
+- Full tenant/synonym/analytics seeding, embeddable UI, backup scripts, OpenTelemetry, browser E2E,
   load tests with actual measured results, VPS restore rehearsal.
 
 No performance numbers are claimed without a measured corpus and hardware profile.
