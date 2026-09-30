@@ -17,6 +17,7 @@ import { projectRoutes } from "./routes/projects.js";
 import { searchRoutes } from "./routes/search.js";
 import { documentRoutes } from "./routes/documents.js";
 import { jobRoutes } from "./routes/jobs.js";
+import { managementRoutes } from "./routes/management.js";
 
 export async function buildServer() {
   const app = Fastify({
@@ -103,6 +104,7 @@ export async function buildServer() {
   await searchRoutes(app, db, redis, keys, runtime);
   await documentRoutes(app, db, keys, queues.index);
   await jobRoutes(app, db, redis, auth);
+  await managementRoutes(app, db, auth, keys, queues.crawl);
 
   app.setErrorHandler((error, request, reply) => {
     if (error instanceof ZodError) {

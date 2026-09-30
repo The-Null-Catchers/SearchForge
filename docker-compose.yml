@@ -81,6 +81,11 @@ services:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
     volumes: [index_data:/data/indexes]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:4020/health/live"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
 
   web:
     build:
