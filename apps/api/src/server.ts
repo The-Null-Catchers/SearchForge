@@ -21,6 +21,8 @@ import { documentRoutes } from "./routes/documents.js";
 import { jobRoutes } from "./routes/jobs.js";
 import { managementRoutes } from "./routes/management.js";
 import { dashboardRoutes } from "./routes/dashboard.js";
+import { scheduleRoutes } from "./routes/schedules.js";
+import { explorerRoutes } from "./routes/explorer.js";
 
 export async function buildServer() {
   const app = Fastify({
@@ -107,10 +109,12 @@ export async function buildServer() {
   await authRoutes(app, auth, mailer, config.NODE_ENV === "production");
   await projectRoutes(app, db, auth, keys);
   await searchRoutes(app, db, redis, keys, runtime);
-  await documentRoutes(app, db, keys, queues.index);
+  await documentRoutes(app, db, keys);
   await jobRoutes(app, db, redis, auth);
-  await managementRoutes(app, db, auth, keys, queues.crawl);
+  await managementRoutes(app, db, auth, keys);
   await dashboardRoutes(app, db, auth);
+  await scheduleRoutes(app, db, auth);
+  await explorerRoutes(app, db, auth, runtime);
 
   app.setErrorHandler((error, request, reply) => {
     if (error instanceof ZodError) {

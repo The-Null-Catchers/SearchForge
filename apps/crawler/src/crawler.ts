@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 import picomatch from "picomatch";
 import {
@@ -10,7 +10,7 @@ import {
   type createDatabase
 } from "@searchforge/db";
 import { crawlConfigSchema, type CrawlConfig } from "@searchforge/shared";
-import type { Queue } from "bullmq";
+import { assertJobActive, enqueueIndex, JobCancelled } from "@searchforge/queue";
 import type { Redis as IORedis } from "ioredis";
 import { extractHtml, hammingDistance, simHash64 } from "./extract.js";
 import { safeFetch } from "./fetch.js";
@@ -45,13 +45,12 @@ export class CrawlRunner {
   constructor(
     private readonly db: Db,
     private readonly redis: IORedis,
-    private readonly indexQueue: Queue,
     private readonly userAgent: string,
     private readonly allowPrivateNetworks: boolean
   ) {}
 
   private async progress(jobId: string, phase: string, progress: Record<string, unknown>) {
-    await this.db.update(jobs).set({ phase, progress, updatedAt: new Date() }).where(eq(jobs.id, jobId));
+    await this.db.update(jobs).set({ phase, progress, updatedAt: new Date() }).where(and(eq(jobs.id, jobId), isNull(jobs.cancelRequestedAt)));
     await this.redis.publish(`job:${jobId}`, JSON.stringify({ phase, ...progress }));
   }
 
@@ -97,7 +96,7 @@ export class CrawlRunner {
     return included && !excluded;
   }
 
-  private async sitemapSeeds(startUrl: string, config: CrawlConfig): Promise<string[]> {
+  private async sitemapSeeds(startUrl: string, config: CrawlConfig, jobId: string): Promise<string[]> {
     const origin = new URL(startUrl).origin;
     const policy = await this.robotsFor(new URL(startUrl), config);
     const initial = [...policy.sitemaps, new URL("/sitemap.xml", origin).toString()];
@@ -106,6 +105,7 @@ export class CrawlRunner {
     const seeds: string[] = [];
 
     while (pending.length && visited.size < 100) {
+      await assertJobActive(this.db, jobId);
       const sitemapUrl = pending.shift()!;
       if (visited.has(sitemapUrl)) continue;
       visited.add(sitemapUrl);
@@ -134,10 +134,15 @@ export class CrawlRunner {
   }
 
   async run(databaseJobId: string, sourceId: string, projectId: string) {
+    const initial = await assertJobActive(this.db, databaseJobId);
+    if (initial.projectId !== projectId || initial.sourceId !== sourceId) throw new Error("Crawl job does not match source");
+    if (initial.state === "completed") return { processed: Number(initial.progress.processed ?? 0),
+      failed: Number(initial.progress.failed ?? 0), indexed: Number(initial.progress.indexed ?? 0),
+      indexJobId: typeof initial.progress.indexJobId === "string" ? initial.progress.indexJobId : undefined };
     const [source] = await this.db.select().from(sources)
       .where(and(eq(sources.id, sourceId), eq(sources.projectId, projectId)))
       .limit(1);
-    if (!source || source.kind !== "website") throw new Error("Website source not found");
+    if (!source || !source.enabled || source.kind !== "website") throw new Error("Website source not found");
     const config = crawlConfigSchema.parse(source.config);
     if (config.allowedDomains.length === 0) {
       config.allowedDomains = [...new Set(config.startUrls.map((url) => new URL(url).hostname.toLowerCase()))];
@@ -148,8 +153,12 @@ export class CrawlRunner {
       .limit(1);
     if (!targetIndex) throw new Error("Default docs index not found");
 
-    await this.db.update(jobs).set({ state: "running", phase: "discover", startedAt: new Date() }).where(eq(jobs.id, databaseJobId));
-    const sitemapSeeds = (await Promise.all(config.startUrls.map((url) => this.sitemapSeeds(url, config)))).flat();
+    await this.db.transaction(async tx => {
+      await tx.select().from(jobs).where(eq(jobs.id, databaseJobId)).for("update");
+      await assertJobActive(tx, databaseJobId);
+      await tx.update(jobs).set({ state: "running", phase: "discover", startedAt: new Date(), updatedAt: new Date() }).where(eq(jobs.id, databaseJobId));
+    });
+    const sitemapSeeds = (await Promise.all(config.startUrls.map((url) => this.sitemapSeeds(url, config, databaseJobId)))).flat();
     const frontier: FrontierItem[] = [];
     const scheduled = new Set<string>();
     const enqueue = (input: string, depth: number) => {
@@ -167,8 +176,9 @@ export class CrawlRunner {
     let indexed = 0;
 
     while (frontier.length > 0 && processed < config.maxPages) {
+      await assertJobActive(this.db, databaseJobId);
       const batch = frontier.splice(0, Math.min(config.concurrency, config.maxPages - processed));
-      await Promise.all(batch.map(async (item) => {
+      const outcomes = await Promise.allSettled(batch.map(async (item) => {
         let normalized: string;
         try {
           normalized = normalizeUrl(item.url);
@@ -195,6 +205,7 @@ export class CrawlRunner {
         this.domainSemaphores.set(url.hostname, semaphore);
 
         await semaphore.run(async () => {
+          await assertJobActive(this.db, databaseJobId);
           processed += 1;
           try {
             const [previous] = await this.db.select().from(crawlPages)
@@ -239,6 +250,7 @@ export class CrawlRunner {
               }).onConflictDoNothing();
               return;
             }
+            await assertJobActive(this.db, databaseJobId);
             const contentType = response.headers.get("content-type") ?? "";
             if (!contentType.includes("text/html") && !contentType.includes("application/xhtml+xml")) {
               await this.db.insert(crawlPages).values({
@@ -330,6 +342,7 @@ export class CrawlRunner {
               crawledAt: new Date()
             }).onConflictDoNothing();
           } catch (error) {
+            if (error instanceof JobCancelled) throw error;
             failed += 1;
             await this.db.insert(crawlPages).values({
               jobId: databaseJobId,
@@ -345,6 +358,8 @@ export class CrawlRunner {
         });
       }));
 
+      const rejected = outcomes.find(result => result.status === "rejected");
+      if (rejected?.status === "rejected") throw rejected.reason;
       await this.progress(databaseJobId, "crawl", {
         discovered: seen.size + frontier.length,
         processed,
@@ -354,32 +369,19 @@ export class CrawlRunner {
       });
     }
 
-    await this.db.update(sources).set({ lastCrawledAt: new Date(), updatedAt: new Date() }).where(eq(sources.id, sourceId));
-    await this.db.update(jobs).set({
-      state: "completed",
-      phase: "completed",
-      progress: { discovered: seen.size, processed, failed, indexed },
-      finishedAt: new Date(),
-      updatedAt: new Date()
-    }).where(eq(jobs.id, databaseJobId));
-    await this.redis.publish(`job:${databaseJobId}`, JSON.stringify({ status: "completed", processed, failed, indexed }));
 
-    if (indexed === 0 && targetIndex.activeVersionId) return { processed, failed, indexed };
-
-    const indexJobId = randomUUID();
-    const externalJobId = randomUUID();
-    await this.db.insert(jobs).values({
-      id: indexJobId,
-      projectId,
-      indexId: targetIndex.id,
-      sourceId,
-      externalJobId,
-      type: "index",
-      state: "queued",
-      phase: "queued",
-      progress: { processed: 0, failed: 0 }
+    const result = await this.db.transaction(async tx => {
+      await tx.select().from(jobs).where(eq(jobs.id, databaseJobId)).for("update");
+      await assertJobActive(tx, databaseJobId);
+      const indexJobId = indexed === 0 && targetIndex.activeVersionId ? undefined
+        : await enqueueIndex(tx, projectId, targetIndex.id, sourceId);
+      const progress = { discovered: seen.size, processed, failed, indexed, ...(indexJobId ? { indexJobId } : {}) };
+      await tx.update(sources).set({ lastCrawledAt: new Date(), updatedAt: new Date() }).where(eq(sources.id, sourceId));
+      await tx.update(jobs).set({ state: "completed", phase: "completed", progress,
+        finishedAt: new Date(), updatedAt: new Date() }).where(eq(jobs.id, databaseJobId));
+      return { processed, failed, indexed, indexJobId };
     });
-    await this.indexQueue.add("build-index", { databaseJobId: indexJobId, projectId, indexId: targetIndex.id }, { jobId: externalJobId, priority: 4 });
-    return { processed, failed, indexed, indexJobId };
+    await this.redis.publish(`job:${databaseJobId}`, JSON.stringify({ status: "completed", ...result }));
+    return result;
   }
 }

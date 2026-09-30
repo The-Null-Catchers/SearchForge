@@ -1,9 +1,9 @@
 import Fastify from "fastify";
 import { Worker } from "bullmq";
 import { Counter, Gauge, Registry, collectDefaultMetrics } from "prom-client";
-import { eq } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { createDatabase, jobs } from "@searchforge/db";
-import { createRedisConnection, type IndexJobData } from "@searchforge/queue";
+import { createRedisConnection, finishCancelled, JobCancelled, type IndexJobData } from "@searchforge/queue";
 import { IndexBuilder } from "./index-builder.js";
 
 const postgresUrl = process.env.POSTGRES_URL;
@@ -28,6 +28,13 @@ const indexWorker = new Worker<IndexJobData>("index", async (job) => {
     completed.inc();
     return result;
   } catch (error) {
+    const [current] = await db.select().from(jobs).where(eq(jobs.id, job.data.databaseJobId)).limit(1);
+    if (current?.state === "completed") return current.progress;
+    if (error instanceof JobCancelled || current?.cancelRequestedAt) {
+      await finishCancelled(db, job.data.databaseJobId);
+      await redis.publish(`job:${job.data.databaseJobId}`, JSON.stringify({ status: "cancelled", phase: "cancelled" }));
+      return { cancelled: true };
+    }
     failed.inc();
     await db.update(jobs).set({
       state: "failed",
@@ -35,7 +42,7 @@ const indexWorker = new Worker<IndexJobData>("index", async (job) => {
       errorMessage: error instanceof Error ? error.message : "Unknown indexing failure",
       finishedAt: new Date(),
       updatedAt: new Date()
-    }).where(eq(jobs.id, job.data.databaseJobId));
+    }).where(and(eq(jobs.id, job.data.databaseJobId), inArray(jobs.state, ["queued", "running", "failed"]), isNull(jobs.cancelRequestedAt)));
     await redis.publish(`job:${job.data.databaseJobId}`, JSON.stringify({
       status: "failed",
       message: error instanceof Error ? error.message : "Unknown indexing failure"
@@ -51,6 +58,7 @@ const indexWorker = new Worker<IndexJobData>("index", async (job) => {
 });
 
 const server = Fastify({ logger: true });
+indexWorker.on("error", error => server.log.error({ err: error }, "Queue worker error"));
 server.get("/health/live", async () => ({ status: "live" }));
 server.get("/health/ready", async (_request, reply) => {
   try {

@@ -1,35 +1,55 @@
 "use client";
-
-import { FormEvent, useEffect, useState } from "react";
-import { api } from "../../../lib/api";
+import { FormEvent, useState } from "react";
 import { useProject } from "../../../components/project-context";
+import { CrawlExplorer } from "../../../components/crawl-explorer";
+import { SourceEditor } from "../../../components/source-editor";
+import { useSources } from "../../../lib/use-sources";
 
-type Source={id:string;name:string;kind:string;lastCrawledAt?:string|null;config:Record<string,unknown>};
-type Resources={sources:Source[];jobs:Array<{id:string;type:string;state:string;phase:string;createdAt:string}>};
-
-export default function SourcesPage(){
-  const {projectId}=useProject();
-  const [data,setData]=useState<Resources>({sources:[],jobs:[]});
-  const [error,setError]=useState("");
-  const load=()=>projectId?api<Resources>(`/v1/projects/${projectId}/resources`).then(setData).catch(e=>setError(e.message)):Promise.resolve();
-  useEffect(()=>{void load();},[projectId]);
-
-  const add=async(e:FormEvent<HTMLFormElement>)=>{
-    e.preventDefault(); if(!projectId)return; const f=new FormData(e.currentTarget);
-    try{
-      await api(`/v1/projects/${projectId}/sources`,{method:"POST",body:JSON.stringify({name:f.get("name"),config:{startUrls:[f.get("url")],maxDepth:5,maxPages:10000,include:["/**"],exclude:[],allowedDomains:[],requestTimeoutMs:15000,concurrency:8,perDomainConcurrency:2,respectRobots:true,storeRawHtml:false}})});
-      e.currentTarget.reset(); await load();
-    }catch(err){setError(err instanceof Error?err.message:"Failed to add source");}
+export default function SourcesPage() {
+  const { projectId, projects } = useProject();
+  const { data, error, busy, loading, add, update, crawl, cancel, schedule } = useSources(projectId);
+  const [selected, setSelected] = useState<{ id: string; pane: "rules" | "pages" } | null>(null);
+  const source = data.sources.find(item => item.id === selected?.id);
+  const canEdit = ["owner", "admin", "developer"].includes(projects.find(p => p.id === projectId)?.role ?? "");
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const fields = new FormData(form);
+    if (await add(String(fields.get("name")), String(fields.get("url")))) form.reset();
   };
-  const crawl=async(id:string)=>{try{await api(`/v1/sources/${id}/crawl`,{method:"POST"});await load();}catch(err){setError(err instanceof Error?err.message:"Failed to start crawl");}};
-
-  return <div className="content"><div className="eyebrow">Discovery pipeline</div><h1>Sources & crawler</h1><p className="muted">Robots-aware crawling is enabled by default. Private network targets are denied by the crawler safety layer.</p>
-    <form className="card card-body form-row" onSubmit={add} style={{marginTop:22}}><div className="field"><label>Source name</label><input className="input" name="name" required/></div><div className="field"><label>Start URL</label><input className="input" type="url" name="url" placeholder="https://docs.example.com" required/></div><button className="btn primary">Add website</button></form>
-    {error&&<div style={{color:"var(--danger)",marginTop:12}}>{error}</div>}
-    <section className="card" style={{marginTop:14}}><div className="card-head"><h2>Websites</h2></div><div className="table-wrap"><table><thead><tr><th>Name</th><th>Type</th><th>Last crawled</th><th></th></tr></thead><tbody>
-      {data.sources.map(s=><tr key={s.id}><td>{s.name}</td><td><span className="badge">{s.kind}</span></td><td>{s.lastCrawledAt?new Date(s.lastCrawledAt).toLocaleString():"Never"}</td><td><button className="btn" onClick={()=>void crawl(s.id)}>Run crawl</button></td></tr>)}
-      {data.sources.length===0&&<tr><td colSpan={4} className="empty">No sources yet.</td></tr>}
-    </tbody></table></div></section>
-    <section className="card" style={{marginTop:14}}><div className="card-head"><h2>Recent jobs</h2></div><div className="table-wrap"><table><thead><tr><th>Type</th><th>Status</th><th>Phase</th><th>Created</th></tr></thead><tbody>{data.jobs.map(j=><tr key={j.id}><td>{j.type}</td><td><span className="badge">{j.state}</span></td><td>{j.phase}</td><td>{new Date(j.createdAt).toLocaleString()}</td></tr>)}</tbody></table></div></section>
+  return <div className="content"><div className="eyebrow">Discovery pipeline</div><h1>Sources & crawler</h1>
+    <p className="muted">Robots-aware crawling with durable recrawl schedules. Progress refreshes every three seconds.</p>
+    {canEdit && <form className="card card-body form-row" onSubmit={submit} style={{ marginTop: 22 }}>
+      <div className="field"><label htmlFor="source-name">Source name</label><input id="source-name" className="input" name="name" required /></div>
+      <div className="field"><label htmlFor="source-url">Start URL</label><input id="source-url" className="input" type="url" name="url" placeholder="https://docs.example.com" required /></div>
+      <button className="btn primary" disabled={!!busy || !projectId}>{busy === "add" ? "Adding…" : "Add website"}</button>
+    </form>}
+    {error && <div role="alert" style={{ color: "var(--danger)", marginTop: 12 }}>{error}</div>}
+    <section className="card" style={{ marginTop: 14 }}><div className="card-head"><h2>Websites</h2></div>
+      <div className="table-wrap"><table><thead><tr><th>Name</th><th>Last crawled</th><th>Recrawl schedule</th><th>Next run</th><th>Actions</th></tr></thead><tbody>
+        {data.sources.map(source => {
+          const saved = data.schedules.find(s => s.sourceId === source.id);
+          const active = data.jobs.some(j => j.sourceId === source.id && j.type === "crawl" && ["queued", "running"].includes(j.state));
+          return <tr key={source.id}><td>{source.name}</td><td>{source.lastCrawledAt ? new Date(source.lastCrawledAt).toLocaleString() : "Never"}</td>
+            <td><select className="input" aria-label={`Recrawl schedule for ${source.name}`} disabled={!canEdit || !!busy}
+              value={saved?.enabled ? saved.intervalSeconds : 0}
+              onChange={event => void schedule(source.id, Number(event.target.value) || saved?.intervalSeconds || 86400, event.target.value !== "0")}>
+              <option value="0">Off</option><option value="3600">Every hour</option><option value="21600">Every 6 hours</option><option value="86400">Daily</option><option value="604800">Weekly</option>
+            </select></td><td>{saved?.enabled ? new Date(saved.nextRunAt).toLocaleString() : "—"}</td>
+            <td><div className="toolbar"><button className="btn" onClick={() => setSelected({ id: source.id, pane: "pages" })}>Pages</button>{canEdit && <><button className="btn" onClick={() => setSelected({ id: source.id, pane: "rules" })}>Rules</button><button className="btn" disabled={!!busy} onClick={() => void crawl(source.id)}>{active ? "Use existing crawl" : "Run crawl"}</button></>}</div></td></tr>;
+        })}
+        {data.sources.length === 0 && <tr><td colSpan={5} className="empty">{loading ? "Loading sources…" : "No sources yet. Add a website to start indexing."}</td></tr>}
+      </tbody></table></div>
+    </section>
+    {source && selected?.pane === "rules" && canEdit && <SourceEditor key={source.id} source={source} disabled={!!busy} save={(name, config) => update(source.id, name, config)}/>}
+    {source && selected?.pane === "pages" && <CrawlExplorer key={source.id} sourceId={source.id} name={source.name}/>}
+    <section className="card" style={{ marginTop: 14 }}><div className="card-head"><h2>Recent jobs</h2><span className="muted">Cancellation keeps the active search version available</span></div>
+      <div className="table-wrap"><table><thead><tr><th>Type</th><th>Status</th><th>Phase</th><th>Processed / errors</th><th>Created</th><th>Actions</th></tr></thead><tbody>
+        {data.jobs.map(job => <tr key={job.id}><td>{job.type}</td><td><span className="badge">{job.cancelRequestedAt && job.state === "running" ? "cancelling" : job.state}</span></td><td>{job.phase}</td>
+          <td>{String(job.progress.processed ?? 0)} / {String(job.progress.failed ?? 0)}</td><td>{new Date(job.createdAt).toLocaleString()}</td>
+          <td>{canEdit && ["queued", "running"].includes(job.state) && <button className="btn" disabled={!!busy || !!job.cancelRequestedAt} onClick={() => void cancel(job.id)}>{job.cancelRequestedAt ? "Cancelling…" : "Cancel"}</button>}</td></tr>)}
+        {!data.jobs.length && <tr><td colSpan={6} className="empty">No jobs yet.</td></tr>}
+      </tbody></table></div>
+    </section>
   </div>;
 }

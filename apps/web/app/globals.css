@@ -100,3 +100,10 @@ tr:last-child td { border-bottom:0; }
   .metrics,.form-row { grid-template-columns:1fr; }
 }
 [dir="rtl"] th,[dir="rtl"] td { text-align:right; }
+
+.toolbar { display:flex; align-items:center; flex-wrap:wrap; gap:12px; }
+.toolbar .input { width:auto; max-width:100%; }
+.document-preview { white-space:pre-wrap; line-height:1.7; max-height:280px; overflow:auto; overflow-wrap:anywhere; }
+details > summary { cursor:pointer; font-weight:600; padding-block:8px; }
+.table-wrap td strong,.table-wrap td .mono { overflow-wrap:anywhere; }
+.rule-editor { border:1px solid var(--line); border-radius:10px; padding:18px; }

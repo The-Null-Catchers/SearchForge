@@ -98,12 +98,18 @@ export type SearchResponse<T = Record<string, unknown>> = {
 };
 
 export const crawlConfigSchema = z.object({
-  startUrls: z.array(z.string().url()).min(1).max(100),
+  startUrls: z.array(z.string().url().max(2048).refine(value => {
+    try { const url = new URL(value); return ["http:", "https:"].includes(url.protocol) && !url.username && !url.password; }
+    catch { return false; }
+  }, "Use an HTTP(S) URL without credentials")).min(1).max(100),
   maxDepth: z.number().int().min(0).max(50).default(5),
   maxPages: z.number().int().min(1).max(1_000_000).default(10_000),
-  include: z.array(z.string()).default(["/**"]),
-  exclude: z.array(z.string()).default([]),
-  allowedDomains: z.array(z.string()).default([]),
+  include: z.array(z.string().min(1).max(256)).max(100).default(["/**"]),
+  exclude: z.array(z.string().min(1).max(256)).max(100).default([]),
+  allowedDomains: z.array(z.string().min(1).max(253).refine(value => {
+    try { const url = new URL(`https://${value}`); return url.hostname === value.toLowerCase() && url.host === value.toLowerCase() && url.pathname === "/" && !url.username && !url.password; }
+    catch { return false; }
+  }, "Use a hostname without a scheme, port or path")).max(100).default([]),
   requestTimeoutMs: z.number().int().min(1000).max(120_000).default(15_000),
   concurrency: z.number().int().min(1).max(64).default(8),
   perDomainConcurrency: z.number().int().min(1).max(16).default(2),
@@ -111,6 +117,25 @@ export const crawlConfigSchema = z.object({
   storeRawHtml: z.boolean().default(false)
 });
 export type CrawlConfig = z.infer<typeof crawlConfigSchema>;
+
+export type ConsoleDocumentSummary = {
+  id: string; documentId: string; title: string; url: string | null; language: string | null;
+  sourceId: string | null; deletedAt: string | null; updatedAt: string;
+};
+export type ConsoleDocumentsPage = { documents: ConsoleDocumentSummary[]; nextAfter: string | null };
+export type DocumentTerm = { field: string; term: string; frequency: number; positions: number[]; documentFrequency: number };
+export type ConsoleDocumentDetail = {
+  documentId: string; body: Record<string, unknown>; activeDocument: Record<string, unknown> | null;
+  sourceId: string | null; deletedAt: string | null; updatedAt: string;
+  state: "deleted" | "indexed" | "pending"; activeVersion: string | null; inActiveVersion: boolean;
+  terms: DocumentTerm[]; termsTruncated: boolean;
+};
+export type CrawlPageView = {
+  id: string; jobId: string; url: string; status: string; httpStatus: number | null;
+  responseTimeMs: number | null; contentType: string | null; canonicalUrl: string | null;
+  crawledAt: string | null; error: string | null; depth: number;
+};
+export type CrawlPagesResponse = { pages: CrawlPageView[]; nextCursor: string | null };
 
 export const jobStatusSchema = z.enum(["queued", "running", "completed", "failed", "cancelled"]);
 export const jobProgressSchema = z.object({
@@ -133,6 +158,8 @@ export type ErrorCode =
   | "INDEX_NOT_FOUND"
   | "SOURCE_NOT_FOUND"
   | "JOB_NOT_FOUND"
+  | "JOB_FINISHED"
+  | "DOCUMENT_NOT_FOUND"
   | "CRAWL_BLOCKED"
   | "INTERNAL_ERROR";
 

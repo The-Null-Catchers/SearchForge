@@ -181,9 +181,11 @@ export const jobs = pgTable("jobs", {
   errorMessage: text("error_message"),
   startedAt: timestamp("started_at", { withTimezone: true }),
   finishedAt: timestamp("finished_at", { withTimezone: true }),
+  cancelRequestedAt: timestamp("cancel_requested_at", { withTimezone: true }),
   ...timestamps
 }, (t) => ({
   projectStateIndex: index("jobs_project_state_idx").on(t.projectId, t.state),
+  sourceStateIndex: index("jobs_source_state_idx").on(t.sourceId, t.state),
   externalUnique: uniqueIndex("jobs_external_job_uq").on(t.externalJobId)
 }));
 
@@ -289,5 +291,25 @@ export const crawlPages = pgTable("crawl_pages", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
 }, (t) => ({
   jobUrlUnique: uniqueIndex("crawl_pages_job_url_uq").on(t.jobId, t.normalizedUrl),
-  sourceStatusIndex: index("crawl_pages_source_status_idx").on(t.sourceId, t.status)
+  sourceStatusIndex: index("crawl_pages_source_status_idx").on(t.sourceId, t.status),
+  sourceCreatedIndex: index("crawl_pages_source_created_idx").on(t.sourceId, t.createdAt, t.id)
 }));
+
+
+export const crawlSchedules = pgTable("crawl_schedules", {
+  sourceId: uuid("source_id").primaryKey().references(() => sources.id, { onDelete: "cascade" }),
+  intervalSeconds: integer("interval_seconds").notNull(),
+  enabled: boolean("enabled").notNull().default(true),
+  nextRunAt: timestamp("next_run_at", { withTimezone: true }).notNull(),
+  ...timestamps
+}, t => ({ dueIndex: index("crawl_schedules_due_idx").on(t.enabled, t.nextRunAt) }));
+
+export const jobOutbox = pgTable("job_outbox", {
+  jobId: uuid("job_id").primaryKey().references(() => jobs.id, { onDelete: "cascade" }),
+  queue: varchar("queue", { length: 40 }).notNull(),
+  name: varchar("name", { length: 80 }).notNull(),
+  payload: jsonb("payload").notNull().$type<Record<string, string>>(),
+  priority: integer("priority").notNull().default(5),
+  dispatchedAt: timestamp("dispatched_at", { withTimezone: true }),
+  ...timestamps
+}, t => ({ pendingIndex: index("job_outbox_pending_idx").on(t.dispatchedAt, t.createdAt) }));

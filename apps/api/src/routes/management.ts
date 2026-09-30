@@ -1,7 +1,6 @@
-import { randomUUID } from "node:crypto";
 import type { FastifyInstance, FastifyRequest } from "fastify";
-import type { Queue } from "bullmq";
-import { and, desc, eq } from "drizzle-orm";
+import { enqueueCrawl } from "@searchforge/queue";
+import { and, desc, eq, getTableColumns, lt, or, sql } from "drizzle-orm";
 import {
   apiKeys,
   auditLogs,
@@ -19,17 +18,18 @@ import { AppError, crawlConfigSchema } from "@searchforge/shared";
 import { z } from "zod";
 import type { ApiKeyService, KeyKind } from "../api-keys.js";
 import type { AuthService } from "../auth.js";
+import { crawlCursorScope, decodeCrawlCursor, encodeCrawlCursor } from "../crawl-cursor.js";
 
 type Db = ReturnType<typeof createDatabase>["db"];
 const roleWeight = { viewer: 0, developer: 1, admin: 2, owner: 3 } as const;
 
-function bearer(request: FastifyRequest): string {
+export function bearer(request: FastifyRequest): string {
   const header = request.headers.authorization;
   if (!header?.startsWith("Bearer ")) throw new AppError("UNAUTHENTICATED", "Access token required", 401);
   return header.slice(7);
 }
 
-async function projectAccess(db: Db, userId: string, projectId: string, minimum: keyof typeof roleWeight) {
+export async function projectAccess(db: Db, userId: string, projectId: string, minimum: keyof typeof roleWeight) {
   const [row] = await db.select({
     projectId: projects.id,
     organizationId: projects.organizationId,
@@ -47,9 +47,27 @@ export async function managementRoutes(
   app: FastifyInstance,
   db: Db,
   auth: AuthService,
-  keyService: ApiKeyService,
-  crawlQueue: Queue
+  keyService: ApiKeyService
 ) {
+  app.put("/v1/sources/:sourceId", async request => {
+    const claims = await auth.verifyAccess(bearer(request));
+    const { sourceId } = z.object({ sourceId: z.string().uuid() }).parse(request.params);
+    const body = z.object({ name: z.string().min(1).max(140), config: crawlConfigSchema }).strict().parse(request.body);
+    const [source] = await db.select().from(sources).where(eq(sources.id, sourceId)).limit(1);
+    if (!source || source.kind !== "website") throw new AppError("SOURCE_NOT_FOUND", "Website source not found", 404);
+    const access = await projectAccess(db, claims.userId, source.projectId, "developer");
+    return db.transaction(async tx => {
+      const [current] = await tx.select().from(sources).where(eq(sources.id, sourceId)).for("update");
+      if (!current) throw new AppError("SOURCE_NOT_FOUND", "Website source not found", 404);
+      const [updated] = await tx.update(sources).set({ name: body.name, config: body.config, updatedAt: new Date() })
+        .where(eq(sources.id, sourceId)).returning();
+      await tx.insert(auditLogs).values({ organizationId: access.organizationId, projectId: source.projectId,
+        actorUserId: claims.userId, action: "source.rules_updated", targetType: "source", targetId: sourceId,
+        requestId: request.id, ip: request.ip, metadata: { previous: current.config, current: body.config } });
+      return updated;
+    });
+  });
+
   app.post("/v1/projects/:projectId/sources", async (request, reply) => {
     const claims = await auth.verifyAccess(bearer(request));
     const { projectId } = z.object({ projectId: z.string().uuid() }).parse(request.params);
@@ -84,23 +102,7 @@ export async function managementRoutes(
     if (!source) throw new AppError("SOURCE_NOT_FOUND", "Source not found", 404);
     await projectAccess(db, claims.userId, source.projectId, "developer");
 
-    const databaseJobId = randomUUID();
-    const externalJobId = randomUUID();
-    await db.insert(jobs).values({
-      id: databaseJobId,
-      projectId: source.projectId,
-      sourceId,
-      externalJobId,
-      type: "crawl",
-      state: "queued",
-      phase: "queued",
-      progress: { discovered: 0, processed: 0, failed: 0 }
-    });
-    await crawlQueue.add(
-      "crawl-source",
-      { databaseJobId, projectId: source.projectId, sourceId },
-      { jobId: externalJobId, priority: 5 }
-    );
+    const databaseJobId = await db.transaction(tx => enqueueCrawl(tx, source.projectId, sourceId));
     return reply.code(202).send({ jobId: databaseJobId });
   });
 
@@ -108,17 +110,31 @@ export async function managementRoutes(
     const claims = await auth.verifyAccess(bearer(request));
     const { sourceId } = z.object({ sourceId: z.string().uuid() }).parse(request.params);
     const query = z.object({
-      status: z.string().optional(),
+      status: z.enum(["indexed", "unchanged", "blocked", "failed", "duplicate", "skipped"]).optional(),
+      q: z.string().max(200).default(""),
+      jobId: z.string().uuid().optional(),
+      cursor: z.string().max(1000).optional(),
       limit: z.coerce.number().int().min(1).max(200).default(50)
     }).parse(request.query);
     const [source] = await db.select().from(sources).where(eq(sources.id, sourceId)).limit(1);
     if (!source) throw new AppError("SOURCE_NOT_FOUND", "Source not found", 404);
     await projectAccess(db, claims.userId, source.projectId, "viewer");
-    const rows = await db.select().from(crawlPages)
-      .where(query.status ? and(eq(crawlPages.sourceId, sourceId), eq(crawlPages.status, query.status)) : eq(crawlPages.sourceId, sourceId))
-      .orderBy(desc(crawlPages.createdAt))
-      .limit(query.limit);
-    return { pages: rows };
+    const scope = crawlCursorScope(sourceId, query.status, query.q, query.jobId);
+    const cursor = query.cursor ? decodeCrawlCursor(query.cursor, scope) : null;
+    const pattern = `%${query.q.replace(/[\\%_]/g, "\\$&")}%`;
+    const rows = await db.select({ ...getTableColumns(crawlPages),
+      cursorTime: sql<string>`to_char(${crawlPages.createdAt} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`
+    }).from(crawlPages)
+      .where(and(eq(crawlPages.sourceId, sourceId),
+        query.status ? eq(crawlPages.status, query.status) : undefined,
+        query.jobId ? eq(crawlPages.jobId, query.jobId) : undefined,
+        query.q ? sql`${crawlPages.url} ilike ${pattern}` : undefined,
+        cursor ? or(sql`${crawlPages.createdAt} < ${cursor.createdAt}::timestamptz`, and(sql`${crawlPages.createdAt} = ${cursor.createdAt}::timestamptz`, lt(crawlPages.id, cursor.id))) : undefined))
+      .orderBy(desc(crawlPages.createdAt), desc(crawlPages.id))
+      .limit(query.limit + 1);
+    const last = rows[query.limit - 1];
+    return { pages: rows.slice(0, query.limit).map(({ cursorTime, ...page }) => page),
+      nextCursor: rows.length > query.limit && last ? encodeCrawlCursor(last.cursorTime, last.id, scope) : null };
   });
 
   app.post("/v1/projects/:projectId/synonyms", async (request, reply) => {
@@ -219,6 +235,7 @@ export async function managementRoutes(
     }
 
     await db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${params.indexId}, 0))`);
       await tx.update(indexVersions).set({ state: "retired", updatedAt: new Date() })
         .where(and(eq(indexVersions.indexId, params.indexId), eq(indexVersions.state, "active")));
       await tx.update(indexVersions).set({ state: "active", activatedAt: new Date(), updatedAt: new Date() })

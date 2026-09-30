@@ -38,14 +38,36 @@ CI run 36715821234 passed all four jobs: Node build/unit/types/integration, Dart
 security baseline and full container smoke. Caddy routed API readiness and the
 login page successfully. Browser E2E remains release work.
 
+## Job lifecycle additions
+
+- Transactional PostgreSQL outbox for document indexing and crawl admission.
+- Durable hourly/6-hour/daily/weekly schedules with overlap prevention.
+- Tenant/role-controlled queued and cooperative running cancellation.
+- Sources dashboard schedule controls, cancellation and live polling.
+- Regression scenarios added to PostgreSQL/Redis integration CI.
+
+See docs/job-lifecycle.md for delivery semantics and cancellation boundaries.
+
+## Explorer additions
+
+- Document browser with filters/pagination and real active segment inspection.
+- Stored-versus-active state, positional terms and safe document previews.
+- Confirmed deletion and asynchronous audited rebuilds.
+- Editable crawl rules, crawl-page filters and query-bound keyset pagination.
+- Viewer/developer permissions, bounded URL/rule validation and safe links.
+- 37 local unit tests plus additional integration regression scenarios.
+
+See docs/explorers.md. Integration/container CI verifies the expanded workflow.
+Browser E2E remains separate release work.
+
 ## Remaining before MVP release
 
-- Per-page crawl retries and durable recrawl scheduling.
-- Scheduler, cancellation, transactional queue outbox and cleanup lifecycle.
+- Per-page crawl retries.
+- Cleanup lifecycle and outbox retention/recovery administration.
 - Compound AND/OR and date filters, query-bound cursors, normalized highlighting
   and efficient typo dictionaries for large vocabularies.
 - Complete ranking/settings/logs workflows,
-  index/document explorer and privacy-aware analytics charts.
+  document field editing and privacy-aware analytics charts.
 - Key-specific/project quotas, expiration/IP configuration UI and notifications.
 - Full tenant/synonym/analytics seeding, embeddable UI, backup scripts, OpenTelemetry, browser E2E,
   load tests with actual measured results, VPS restore rehearsal.
