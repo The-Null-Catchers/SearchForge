@@ -224,15 +224,62 @@ try {
   await dispatcher.dispatch();
   const matching = (await queues.index.getJobs(['waiting', 'paused', 'prioritized'])).filter(job => job.data.databaseJobId === queued.jobId);
   assert.equal(matching.length, 1);
+  // Redis loss after acknowledged delivery is repaired without replaying live jobs.
+  const redisJobId = matching[0].id;
+  await matching[0].remove();
+  await pool.query("UPDATE job_outbox SET updated_at = now() - interval '1 minute' WHERE job_id = $1", [queued.jobId]);
+  const recoveries = await Promise.all([dispatcher.reconcile(), new JobDispatcher(db, queues).reconcile()]);
+  assert.equal(recoveries.reduce((count, result) => count + result.recovered, 0), 1);
+  assert.equal((await queues.index.getJob(redisJobId)).data.databaseJobId, queued.jobId);
+  await pool.query("UPDATE job_outbox SET updated_at = now() - interval '1 minute' WHERE job_id = $1", [queued.jobId]);
+  assert.equal((await dispatcher.reconcile()).recovered, 0);
+  // A Redis outage rolls back the check timestamp so later ticks retry recovery.
+  await (await queues.index.getJob(redisJobId)).remove();
+  await pool.query("UPDATE job_outbox SET updated_at = now() - interval '1 minute' WHERE job_id = $1", [queued.jobId]);
+  const unavailable = new JobDispatcher(db, { ...queues, index: {
+    add: queues.index.add.bind(queues.index), getJob: async () => { throw new Error('Injected Redis outage'); }
+  } });
+  await assert.rejects(unavailable.reconcile(), /Injected Redis outage/);
+  assert.equal((await dispatcher.reconcile()).recovered, 1);
+  const healthyRecovery = await sdk.upsertDocument({ id: 'recovery-healthy', content: 'recovery fairness' });
+  const lostRecovery = await sdk.upsertDocument({ id: 'recovery-lost', content: 'recovery fairness' });
+  await dispatcher.dispatch();
+  const recoveryIds = (await pool.query('SELECT id, external_job_id FROM jobs WHERE id = ANY($1::uuid[])', [[healthyRecovery.jobId, lostRecovery.jobId]])).rows;
+  const lostRedisId = recoveryIds.find(row => row.id === lostRecovery.jobId).external_job_id;
+  await (await queues.index.getJob(lostRedisId)).remove();
+  await pool.query("UPDATE job_outbox SET updated_at = now() - interval '3 minutes' WHERE job_id = $1", [queued.jobId]);
+  await pool.query("UPDATE job_outbox SET updated_at = now() - interval '2 minutes' WHERE job_id = $1", [healthyRecovery.jobId]);
+  await pool.query("UPDATE job_outbox SET updated_at = now() - interval '1 minute' WHERE job_id = $1", [lostRecovery.jobId]);
+  assert.equal((await dispatcher.reconcile(new Date(), 1)).recovered, 0);
+  assert.equal((await dispatcher.reconcile(new Date(), 1)).recovered, 0);
+  assert.equal((await dispatcher.reconcile(new Date(), 1)).recovered, 1);
+  await pool.query("UPDATE jobs SET state = 'running' WHERE id = $1", [queued.jobId]);
+  await (await queues.index.getJob(redisJobId)).remove();
+  await pool.query("UPDATE job_outbox SET updated_at = now() - interval '1 minute' WHERE job_id = $1", [queued.jobId]);
+  await dispatcher.reconcile();
+  assert.equal(await queues.index.getJob(redisJobId), undefined);
+  for (const terminal of ['completed', 'failed']) {
+    await pool.query('UPDATE jobs SET state = $2 WHERE id = $1', [queued.jobId, terminal]);
+    await dispatcher.reconcile();
+    assert.equal(await queues.index.getJob(redisJobId), undefined);
+  }
+  await pool.query("UPDATE jobs SET state = 'queued' WHERE id = $1", [queued.jobId]);
+  assert.equal((await dispatcher.reconcile()).recovered, 1);
   startDispatch();
   const inaccessible = await app.inject({ method: 'POST', url: `/v1/jobs/${queued.jobId}/cancel`, headers: { authorization: `Bearer ${stranger.accessToken}` } });
   assert.equal(inaccessible.statusCode, 404);
   const cancelled = await request('POST', `/v1/jobs/${queued.jobId}/cancel`, {}, owner.accessToken);
   assert.equal(cancelled.state, 'cancelled');
+  await (await queues.index.getJob(redisJobId)).remove();
+  await pool.query("UPDATE job_outbox SET updated_at = now() - interval '1 minute' WHERE job_id = $1", [queued.jobId]);
+  await dispatcher.reconcile();
+  assert.equal(await queues.index.getJob(redisJobId), undefined);
   const count = await pool.query('SELECT count(*) FROM audit_logs WHERE action = $1 AND target_id = $2', ['job.cancel_requested', queued.jobId]);
   await request('POST', `/v1/jobs/${queued.jobId}/cancel`, {}, owner.accessToken);
   assert.equal((await pool.query('SELECT count(*) FROM audit_logs WHERE action = $1 AND target_id = $2', ['job.cancel_requested', queued.jobId])).rows[0].count, count.rows[0].count);
   await worker.resume();
+  await waitJob(healthyRecovery.jobId, owner.accessToken);
+  await waitJob(lostRecovery.jobId, owner.accessToken);
   assert.equal((await search.search('search')).indexVersion, String((await request('GET', `/v1/indexes/${project.index.id}/versions`, undefined, owner.accessToken)).versions.find(v => v.state === 'active').sequence));
 
   // Cancel after writing a real segment, before atomic activation: old version stays active.

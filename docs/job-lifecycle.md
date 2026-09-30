@@ -15,9 +15,20 @@ PostgreSQL persisted the task, even when Redis is temporarily unavailable.
 The dispatcher delivers at least once: each retry uses the persisted BullMQ job
 ID, so a crash after Redis accepts a job but before PostgreSQL acknowledges it
 does not duplicate the queued task. Completed processors also check durable job
-state. Redis must remain persistent; this mechanism is not automatic recovery
-from deletion of already-dispatched Redis queues. Outbox retention/archival and
-dead-letter administration remain future work.
+state. The dispatcher also checks acknowledged outbox rows whose durable task is
+still queued, at most 25 per tick, with a 30-second interval between checks. If
+the BullMQ record disappeared it restores the same ID and payload. Checks rotate
+by last-check time, including healthy records, so paused queues cannot starve
+lost tasks. Concurrent dispatchers lock rows with `SKIP LOCKED`; queue outages
+roll back check timestamps and retry on a later tick. Recovery emits a structured
+warning with checked/recovered counts.
+
+Redis must remain persistent. Automatic recovery covers queued tasks only;
+running tasks are excluded because replay after loss of their Redis lock requires
+processor fencing. Cancelled, completed and failed tasks are never resurrected.
+An existing Redis record is left alone even if it reports failure: terminal-state
+reconciliation and dead-letter administration remain future work. Outbox rows
+must be retained until their durable job finishes; retention/archival is pending.
 
 ## Schedules
 
@@ -58,7 +69,9 @@ the sources dashboard refreshes persisted progress every three seconds.
 ## Verification
 
 The PostgreSQL/Redis integration suite covers replay after interrupted dispatch,
-single BullMQ job identity, tenant denial, repeated/queued/running cancellation,
+single BullMQ job identity, recovery after acknowledged Redis job deletion,
+concurrent recovery, existing record deduplication, recovery after Redis outage,
+running/cancelled exclusion, tenant denial, repeated/queued/running cancellation,
 cancellation after segment persistence but before activation, schedule persistence
 across dispatcher replacement, concurrent ticks, overlap prevention, disabled
 schedules and interval validation. These checks use real database/queue/file

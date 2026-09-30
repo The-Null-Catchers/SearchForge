@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, eq, inArray, isNull, lte } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, isNotNull, lte } from "drizzle-orm";
 import { crawlSchedules, jobOutbox, jobs, sources, type createDatabase } from "@searchforge/db";
 import type { Queue } from "bullmq";
 
@@ -47,7 +47,32 @@ export async function enqueueCrawl(tx: JobTransaction, projectId: string, source
 }
 
 export class JobDispatcher {
-  constructor(private readonly db: Db, private readonly queues: Record<string, Pick<Queue, "add">>) {}
+  constructor(private readonly db: Db, private readonly queues: Record<string, Pick<Queue, "add"> & Partial<Pick<Queue, "getJob">>>) {}
+
+  // Recover accepted tasks whose Redis record disappeared after delivery. Running
+  // tasks are deliberately excluded: replaying them needs processor fencing.
+  async reconcile(now = new Date(), limit = 25) {
+    return this.db.transaction(async tx => {
+      const entries = await tx.select({ entry: jobOutbox, job: jobs }).from(jobOutbox)
+        .innerJoin(jobs, eq(jobs.id, jobOutbox.jobId))
+        .where(and(isNotNull(jobOutbox.dispatchedAt), eq(jobs.state, "queued"),
+          isNull(jobs.cancelRequestedAt), lte(jobOutbox.updatedAt, new Date(now.getTime() - 30_000))))
+        .orderBy(asc(jobOutbox.updatedAt), asc(jobOutbox.jobId)).limit(limit)
+        .for("update", { skipLocked: true });
+      let recovered = 0;
+      for (const { entry, job } of entries) {
+        const queue = this.queues[entry.queue];
+        if (!queue?.getJob || !job.externalJobId) throw new Error("Invalid recovery destination");
+        if (!(await queue.getJob(job.externalJobId))) {
+          await queue.add(entry.name, entry.payload, { jobId: job.externalJobId, priority: entry.priority });
+          recovered += 1;
+        }
+        // Rotate healthy entries too so large paused queues cannot starve lost jobs.
+        await tx.update(jobOutbox).set({ updatedAt: now }).where(eq(jobOutbox.jobId, entry.jobId));
+      }
+      return { checked: entries.length, recovered };
+    });
+  }
 
   async dispatch(limit = 25) {
     return this.db.transaction(async tx => {

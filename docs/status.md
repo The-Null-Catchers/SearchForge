@@ -45,6 +45,9 @@ login page successfully. Browser E2E remains release work.
 - Tenant/role-controlled queued and cooperative running cancellation.
 - Sources dashboard schedule controls, cancellation and live polling.
 - Regression scenarios added to PostgreSQL/Redis integration CI.
+- Queued-job recovery after acknowledged Redis job loss, rotating bounded checks,
+  concurrent dispatchers and Redis outage retries. Running-job recovery still
+  requires processor fencing; terminal tasks are excluded.
 
 See docs/job-lifecycle.md for delivery semantics and cancellation boundaries.
 

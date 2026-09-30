@@ -65,6 +65,8 @@ function tick() {
     try {
       await dispatcher.schedule();
       await dispatcher.dispatch();
+      const recovery = await dispatcher.reconcile();
+      if (recovery.recovered) server.log.warn(recovery, "Recovered missing queued Redis jobs");
     } catch (error) { server.log.error({ err: error }, "Job dispatch/schedule tick failed; will retry"); }
   })().finally(() => { tickInFlight = undefined; });
   return tickInFlight;
