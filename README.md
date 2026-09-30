@@ -111,3 +111,5 @@ MVP focuses on lexical retrieval. The core exposes boundaries for sharding, repl
 
 See [SDK usage](docs/sdk.md), [demo and benchmarks](docs/benchmarking.md) and
 [implementation status](docs/status.md). SDK packages are not published yet.
+
+Job delivery, scheduled recrawls and cancellation: [job lifecycle](docs/job-lifecycle.md).

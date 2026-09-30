@@ -1,10 +1,10 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { and, eq, sql } from "drizzle-orm";
-import { documents, indexes, jobs, type createDatabase } from "@searchforge/db";
+import { documents, indexes, type createDatabase } from "@searchforge/db";
 import { AppError } from "@searchforge/shared";
 import { z } from "zod";
-import type { Queue } from "bullmq";
+import { enqueueIndex } from "@searchforge/queue";
 import type { ApiKeyService } from "../api-keys.js";
 
 type Db = ReturnType<typeof createDatabase>["db"];
@@ -32,48 +32,29 @@ function hashDocument(document: Record<string, unknown>): string {
   return createHash("sha256").update(JSON.stringify(document)).digest("hex");
 }
 
-async function enqueueRebuild(db: Db, queue: Queue, projectId: string, indexId: string) {
-  const databaseJobId = randomUUID();
-  const externalJobId = randomUUID();
-  await db.insert(jobs).values({
-    id: databaseJobId,
-    projectId,
-    indexId,
-    externalJobId,
-    type: "index",
-    state: "queued",
-    phase: "queued",
-    progress: { processed: 0, failed: 0 }
-  });
-  await queue.add(
-    "build-index",
-    { databaseJobId, projectId, indexId },
-    { jobId: externalJobId, priority: 5 }
-  );
-  return databaseJobId;
-}
-
-export async function documentRoutes(app: FastifyInstance, db: Db, keys: ApiKeyService, indexQueue: Queue) {
+export async function documentRoutes(app: FastifyInstance, db: Db, keys: ApiKeyService) {
   app.put("/v1/indexes/:indexSlug/documents/:documentId", async (request, reply) => {
     const auth = await keys.authenticate(token(request), ["indexing", "admin"], request.ip);
     const params = z.object({ indexSlug: z.string(), documentId: z.string().min(1).max(200) }).parse(request.params);
     const index = await resolveIndex(db, auth.projectId, params.indexSlug);
     const document = normalizedBody(params.documentId, request.body);
-    await db.insert(documents).values({
-      indexId: index.id,
-      documentId: params.documentId,
-      body: document,
-      contentHash: hashDocument(document)
-    }).onConflictDoUpdate({
-      target: [documents.indexId, documents.documentId],
-      set: {
+    const jobId = await db.transaction(async tx => {
+      await tx.insert(documents).values({
+        indexId: index.id,
+        documentId: params.documentId,
         body: document,
-        contentHash: hashDocument(document),
-        deletedAt: null,
-        updatedAt: new Date()
-      }
+        contentHash: hashDocument(document)
+      }).onConflictDoUpdate({
+        target: [documents.indexId, documents.documentId],
+        set: {
+          body: document,
+          contentHash: hashDocument(document),
+          deletedAt: null,
+          updatedAt: new Date()
+        }
     });
-    const jobId = await enqueueRebuild(db, indexQueue, auth.projectId, index.id);
+    return enqueueIndex(tx, auth.projectId, index.id);
+    });
     return reply.code(202).send({ documentId: params.documentId, jobId });
   });
 
@@ -90,16 +71,18 @@ export async function documentRoutes(app: FastifyInstance, db: Db, keys: ApiKeyS
       body: document,
       contentHash: hashDocument(document)
     }));
-    await db.insert(documents).values(values).onConflictDoUpdate({
-      target: [documents.indexId, documents.documentId],
-      set: {
-        body: sql`excluded.body`,
-        contentHash: sql`excluded.content_hash`,
-        deletedAt: null,
-        updatedAt: new Date()
-      }
+    const jobId = await db.transaction(async tx => {
+      await tx.insert(documents).values(values).onConflictDoUpdate({
+        target: [documents.indexId, documents.documentId],
+        set: {
+          body: sql`excluded.body`,
+          contentHash: sql`excluded.content_hash`,
+          deletedAt: null,
+          updatedAt: new Date()
+        }
     });
-    const jobId = await enqueueRebuild(db, indexQueue, auth.projectId, index.id);
+    return enqueueIndex(tx, auth.projectId, index.id);
+    });
     return reply.code(202).send({ accepted: values.length, jobId });
   });
 
@@ -107,9 +90,11 @@ export async function documentRoutes(app: FastifyInstance, db: Db, keys: ApiKeyS
     const auth = await keys.authenticate(token(request), ["indexing", "admin"], request.ip);
     const params = z.object({ indexSlug: z.string(), documentId: z.string().min(1).max(200) }).parse(request.params);
     const index = await resolveIndex(db, auth.projectId, params.indexSlug);
-    await db.update(documents).set({ deletedAt: new Date(), updatedAt: new Date() })
-      .where(and(eq(documents.indexId, index.id), eq(documents.documentId, params.documentId)));
-    const jobId = await enqueueRebuild(db, indexQueue, auth.projectId, index.id);
+    const jobId = await db.transaction(async tx => {
+      await tx.update(documents).set({ deletedAt: new Date(), updatedAt: new Date() })
+        .where(and(eq(documents.indexId, index.id), eq(documents.documentId, params.documentId)));
+      return enqueueIndex(tx, auth.projectId, index.id);
+    });
     return reply.code(202).send({ documentId: params.documentId, jobId });
   });
 }

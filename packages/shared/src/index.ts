@@ -133,6 +133,7 @@ export type ErrorCode =
   | "INDEX_NOT_FOUND"
   | "SOURCE_NOT_FOUND"
   | "JOB_NOT_FOUND"
+  | "JOB_FINISHED"
   | "CRAWL_BLOCKED"
   | "INTERNAL_ERROR";
 

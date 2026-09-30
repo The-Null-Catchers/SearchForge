@@ -8,6 +8,7 @@ import {
   type createDatabase
 } from "@searchforge/db";
 import { buildSegment, FileSegmentStore, validateSegment, type SearchDocument } from "@searchforge/search-core";
+import { assertJobActive, JobCancelled } from "@searchforge/queue";
 import { indexSettingsSchema } from "@searchforge/shared";
 import type { Redis as IORedis } from "ioredis";
 
@@ -25,7 +26,7 @@ export class IndexBuilder {
   }
 
   private async progress(jobId: string, phase: string, progress: Record<string, unknown>) {
-    await this.db.update(jobs).set({ phase, progress, updatedAt: new Date() }).where(eq(jobs.id, jobId));
+    await this.db.update(jobs).set({ phase, progress, updatedAt: new Date() }).where(and(eq(jobs.id, jobId), isNull(jobs.cancelRequestedAt)));
     await this.redis.publish(`job:${jobId}`, JSON.stringify({ phase, ...progress }));
   }
 
@@ -35,7 +36,7 @@ export class IndexBuilder {
       await lock.execute(sql`select pg_advisory_xact_lock(hashtextextended(${indexId}, 0))`);
       const [job] = await this.db.select().from(jobs).where(and(eq(jobs.id, databaseJobId), eq(jobs.projectId, projectId))).limit(1);
       if (!job || job.indexId !== indexId) throw new Error("Index job not found");
-      if (job.state === "cancelled") return { cancelled: true };
+      if (job.state === "cancelled" || job.cancelRequestedAt) throw new JobCancelled();
       if (job.state === "completed") return job.progress;
       return this.buildLocked(databaseJobId, projectId, indexId);
     });
@@ -63,8 +64,12 @@ export class IndexBuilder {
     }).returning();
     if (!version) throw new Error("Failed to create index version");
 
-    await this.db.update(jobs).set({ state: "running", phase: "load", startedAt: new Date(), updatedAt: new Date() })
-      .where(eq(jobs.id, databaseJobId));
+    const started = await this.db.update(jobs).set({ state: "running", phase: "load", startedAt: new Date(), updatedAt: new Date() })
+      .where(and(eq(jobs.id, databaseJobId), isNull(jobs.cancelRequestedAt))).returning();
+    if (!started.length) {
+      await this.db.update(indexVersions).set({ state: "failed" }).where(eq(indexVersions.id, version.id));
+      throw new JobCancelled();
+    }
     await this.progress(databaseJobId, "load", { processed: 0, failed: 0 });
 
     try {
@@ -77,15 +82,19 @@ export class IndexBuilder {
       const searchDocuments = rows.map((row) => row.body as SearchDocument);
       await this.progress(databaseJobId, "analyze", { processed: 0, total: searchDocuments.length, failed: 0 });
 
+      await assertJobActive(this.db, databaseJobId);
       const segment = buildSegment(searchDocuments, settings, {
         version: String(sequence),
         searchableFields: Object.keys(settings.fieldBoosts)
       });
       validateSegment(segment);
       await this.progress(databaseJobId, "persist", { processed: searchDocuments.length, total: searchDocuments.length, failed: 0 });
+      await assertJobActive(this.db, databaseJobId);
       const manifestKey = await this.store.write(indexId, segment);
 
       await this.db.transaction(async (tx) => {
+        await tx.select().from(jobs).where(eq(jobs.id, databaseJobId)).for("update");
+        await assertJobActive(tx, databaseJobId);
         if (index.activeVersionId) {
           await tx.update(indexVersions).set({ state: "retired", updatedAt: new Date() })
             .where(eq(indexVersions.id, index.activeVersionId));

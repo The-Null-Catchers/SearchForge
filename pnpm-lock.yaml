@@ -257,9 +257,15 @@ importers:
 
   packages/queue:
     dependencies:
+      '@searchforge/db':
+        specifier: workspace:*
+        version: link:../db
       bullmq:
         specifier: ^5.58.5
         version: 5.81.5
+      drizzle-orm:
+        specifier: ^0.44.5
+        version: 0.44.7(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(pg@8.23.0)
       ioredis:
         specifier: ^5.7.0
         version: 5.11.1

@@ -1,9 +1,9 @@
 import Fastify from "fastify";
 import { Worker } from "bullmq";
 import { Counter, Gauge, Registry, collectDefaultMetrics } from "prom-client";
-import { eq } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { createDatabase, jobs } from "@searchforge/db";
-import { createQueues, createRedisConnection, type CrawlJobData } from "@searchforge/queue";
+import { createQueues, createRedisConnection, finishCancelled, JobCancelled, type CrawlJobData } from "@searchforge/queue";
 import { CrawlRunner } from "./crawler.js";
 
 const postgresUrl = process.env.POSTGRES_URL;
@@ -15,7 +15,7 @@ const redis = createRedisConnection(redisUrl);
 const queues = createQueues(redis);
 const userAgent = process.env.CRAWLER_USER_AGENT ?? "SearchForgeBot/1.0";
 const allowPrivateNetworks = process.env.CRAWLER_ALLOW_PRIVATE_NETWORKS === "true";
-const runner = new CrawlRunner(db, redis, queues.index, userAgent, allowPrivateNetworks);
+const runner = new CrawlRunner(db, redis, userAgent, allowPrivateNetworks);
 
 const metrics = new Registry();
 collectDefaultMetrics({ register: metrics, prefix: "searchforge_crawler_" });
@@ -30,6 +30,13 @@ const worker = new Worker<CrawlJobData>("crawl", async (job) => {
     completed.inc();
     return result;
   } catch (error) {
+    const [current] = await db.select().from(jobs).where(eq(jobs.id, job.data.databaseJobId)).limit(1);
+    if (current?.state === "completed") return current.progress;
+    if (error instanceof JobCancelled || current?.cancelRequestedAt) {
+      await finishCancelled(db, job.data.databaseJobId);
+      await redis.publish(`job:${job.data.databaseJobId}`, JSON.stringify({ status: "cancelled", phase: "cancelled" }));
+      return { cancelled: true };
+    }
     failed.inc();
     await db.update(jobs).set({
       state: "failed",
@@ -37,7 +44,7 @@ const worker = new Worker<CrawlJobData>("crawl", async (job) => {
       errorMessage: error instanceof Error ? error.message : "Unknown crawl failure",
       finishedAt: new Date(),
       updatedAt: new Date()
-    }).where(eq(jobs.id, job.data.databaseJobId));
+    }).where(and(eq(jobs.id, job.data.databaseJobId), inArray(jobs.state, ["queued", "running", "failed"]), isNull(jobs.cancelRequestedAt)));
     await redis.publish(`job:${job.data.databaseJobId}`, JSON.stringify({
       status: "failed",
       message: error instanceof Error ? error.message : "Unknown crawl failure"
@@ -53,6 +60,7 @@ const worker = new Worker<CrawlJobData>("crawl", async (job) => {
 });
 
 const server = Fastify({ logger: true });
+worker.on("error", error => server.log.error({ err: error }, "Queue worker error"));
 server.get("/health/live", async () => ({ status: "live" }));
 server.get("/health/ready", async (_request, reply) => {
   try {

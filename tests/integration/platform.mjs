@@ -19,14 +19,17 @@ const { buildServer } = await import('../../apps/api/dist/server.js');
 const { CrawlRunner } = await import('../../apps/crawler/dist/crawler.js');
 const { IndexBuilder } = await import('../../apps/indexer/dist/index-builder.js');
 const { createDatabase } = await import('../../packages/db/dist/index.js');
-const { createRedisConnection } = await import('../../packages/queue/dist/index.js');
+const { createRedisConnection, JobDispatcher, JobCancelled, finishCancelled } = await import('../../packages/queue/dist/index.js');
 const { SearchForge } = await import('../../packages/sdk-js/dist/index.js');
 const { config } = await import('../../apps/api/dist/config.js');
 const { AuthService } = await import('../../apps/api/dist/auth.js');
 const { db, pool } = createDatabase(process.env.POSTGRES_URL);
 const redis = createRedisConnection(process.env.REDIS_URL);
 const builder = new IndexBuilder(db, redis, storage);
-const worker = new Worker('index', async job => builder.build(job.data.databaseJobId, job.data.projectId, job.data.indexId), { connection: redis, concurrency: 2 });
+const worker = new Worker('index', async job => {
+  try { return await builder.build(job.data.databaseJobId, job.data.projectId, job.data.indexId); }
+  catch (error) { if (!(error instanceof JobCancelled)) throw error; await finishCancelled(db, job.data.databaseJobId); return { cancelled: true }; }
+}, { connection: redis, concurrency: 2 });
 worker.on('error', error => console.error(error));
 const app = await buildServer();
 let organizationId;
@@ -34,6 +37,13 @@ let otherUserId;
 let site;
 const { createQueues } = await import("../../packages/queue/dist/index.js");
 const queues = createQueues(redis);
+const dispatcher = new JobDispatcher(db, queues);
+let dispatching;
+let timer;
+function startDispatch() { timer = setInterval(() => {
+  if (!dispatching) dispatching = dispatcher.dispatch().catch(error => console.error(error)).finally(() => { dispatching = undefined; });
+}, 100); }
+startDispatch();
 
 async function request(method, url, payload, token) {
   const response = await app.inject({ method, url, ...(payload ? { payload } : {}),
@@ -98,10 +108,14 @@ try {
   let rootConditional = 0;
   let childConditional = 0;
   let childVersion = 1;
+  let holdRoot = false;
+  let heldResponse;
+  let rootSeen;
   site = createServer((req, res) => {
     if (req.url === '/robots.txt') { res.end('User-agent: *\nAllow: /'); return; }
     if (req.url === '/sitemap.xml') { res.writeHead(404); res.end(); return; }
     const child = req.url === '/child';
+    if (holdRoot && !child) { heldResponse = res; rootSeen(); return; }
     const etag = child ? `"child-${childVersion}"` : '"root-1"';
     if (req.headers['if-none-match']) { if (child) childConditional++; else rootConditional++; }
     if (req.headers['if-none-match'] === etag) { res.writeHead(304); res.end(); return; }
@@ -115,7 +129,7 @@ try {
   const source = await request('POST', `/v1/projects/${project.id}/sources`, {
     name: 'Fixture', config: { startUrls: [`http://127.0.0.1:${site.address().port}`], maxPages: 10, maxDepth: 2 }
   }, owner.accessToken);
-  const runner = new CrawlRunner(db, redis, queues.index, 'SearchForgeBot/1.0', true);
+  const runner = new CrawlRunner(db, redis, 'SearchForgeBot/1.0', true);
   async function crawl() {
     const { jobId } = await request('POST', `/v1/sources/${source.id}/crawl`, {}, owner.accessToken);
     // No crawl worker is running here: invoke its real processor directly.
@@ -133,6 +147,87 @@ try {
   assert.equal(unchanged.indexed, 0);
   assert.equal(unchanged.indexJobId, undefined);
 
+
+  // Outbox survives an interrupted Redis enqueue and duplicate dispatch attempts.
+  await worker.pause();
+  clearInterval(timer);
+  await dispatching;
+  await dispatcher.dispatch(100);
+  const queued = await sdk.upsertDocument({ id: 'cancelled-doc', content: 'pending mutation' });
+  const failedDispatcher = new JobDispatcher(db, { ...queues, index: {
+    add: async (...args) => { await queues.index.add(...args); throw new Error('Injected interruption after Redis accepted job'); }
+  } });
+  await assert.rejects(failedDispatcher.dispatch(), /Injected interruption/);
+  const entry = (await pool.query('SELECT dispatched_at FROM job_outbox WHERE job_id = $1', [queued.jobId])).rows[0];
+  assert.equal(entry.dispatched_at, null);
+  await dispatcher.dispatch();
+  const matching = (await queues.index.getJobs(['waiting', 'paused'])).filter(job => job.data.databaseJobId === queued.jobId);
+  assert.equal(matching.length, 1);
+  startDispatch();
+  const inaccessible = await app.inject({ method: 'POST', url: `/v1/jobs/${queued.jobId}/cancel`, headers: { authorization: `Bearer ${stranger.accessToken}` } });
+  assert.equal(inaccessible.statusCode, 404);
+  const cancelled = await request('POST', `/v1/jobs/${queued.jobId}/cancel`, {}, owner.accessToken);
+  assert.equal(cancelled.state, 'cancelled');
+  const count = await pool.query('SELECT count(*) FROM audit_logs WHERE action = $1 AND target_id = $2', ['job.cancel_requested', queued.jobId]);
+  await request('POST', `/v1/jobs/${queued.jobId}/cancel`, {}, owner.accessToken);
+  assert.equal((await pool.query('SELECT count(*) FROM audit_logs WHERE action = $1 AND target_id = $2', ['job.cancel_requested', queued.jobId])).rows[0].count, count.rows[0].count);
+  await worker.resume();
+  assert.equal((await search.search('search')).indexVersion, String((await request('GET', `/v1/indexes/${project.index.id}/versions`, undefined, owner.accessToken)).versions.find(v => v.state === 'active').sequence));
+
+  // Cancel after writing a real segment, before atomic activation: old version stays active.
+  const versionBeforeCancel = (await search.search('search')).indexVersion;
+  let releaseWrite;
+  let written;
+  const writeGate = new Promise(resolve => { releaseWrite = resolve; });
+  const writeSeen = new Promise(resolve => { written = resolve; });
+  const originalWrite = builder.store.write.bind(builder.store);
+  builder.store.write = async (...args) => { const key = await originalWrite(...args); written(); await writeGate; return key; };
+  const building = await sdk.upsertDocument({ id: 'cancel-at-activation', content: 'candidate version' });
+  await writeSeen;
+  assert.equal((await request('POST', `/v1/jobs/${building.jobId}/cancel`, {}, owner.accessToken)).state, 'running');
+  releaseWrite();
+  builder.store.write = originalWrite;
+  for (let i = 0; i < 150; i++) {
+    if ((await request('GET', `/v1/jobs/${building.jobId}`, undefined, owner.accessToken)).state === 'cancelled') break;
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  assert.equal((await request('GET', `/v1/jobs/${building.jobId}`, undefined, owner.accessToken)).state, 'cancelled');
+  assert.equal((await search.search('search')).indexVersion, versionBeforeCancel);
+
+  // A running crawl cancellation waits for its bounded in-flight fetch, then stops.
+  holdRoot = true;
+  const rootGate = new Promise(resolve => { rootSeen = resolve; });
+  const crawlToCancel = await request('POST', `/v1/sources/${source.id}/crawl`, {}, owner.accessToken);
+  const pendingCrawl = runner.run(crawlToCancel.jobId, source.id, project.id);
+  const cancellationAssertion = assert.rejects(pendingCrawl, error => error instanceof JobCancelled);
+  await rootGate;
+  await request('POST', `/v1/jobs/${crawlToCancel.jobId}/cancel`, {}, owner.accessToken);
+  heldResponse.setHeader('content-type', 'text/html');
+  heldResponse.end('<main>Cancelled page must not activate a new index</main>');
+  await cancellationAssertion;
+  await finishCancelled(db, crawlToCancel.jobId);
+  holdRoot = false;
+  assert.equal((await request('GET', `/v1/jobs/${crawlToCancel.jobId}`, undefined, owner.accessToken)).state, 'cancelled');
+
+  // Schedule survives process replacement and concurrent ticks enqueue only once.
+  const scheduleDenied = await app.inject({ method: 'PUT', url: `/v1/sources/${source.id}/schedule`, payload: { enabled: true, intervalSeconds: 3600 }, headers: { authorization: `Bearer ${stranger.accessToken}` } });
+  assert.equal(scheduleDenied.statusCode, 403);
+  const invalidSchedule = await app.inject({ method: 'PUT', url: `/v1/sources/${source.id}/schedule`, payload: { enabled: true, intervalSeconds: 1 }, headers: { authorization: `Bearer ${owner.accessToken}` } });
+  assert.equal(invalidSchedule.statusCode, 400);
+  await request('PUT', `/v1/sources/${source.id}/schedule`, { enabled: true, intervalSeconds: 3600 }, owner.accessToken);
+  const due = new Date(Date.now() + 3_601_000);
+  const restartedDispatcher = new JobDispatcher(db, queues);
+  assert.equal((await Promise.all([restartedDispatcher.schedule(due), dispatcher.schedule(due)])).reduce((a, b) => a + b, 0), 1);
+  const scheduledJob = (await pool.query("SELECT id FROM jobs WHERE source_id = $1 AND type = 'crawl' AND state = 'queued'", [source.id])).rows;
+  assert.equal(scheduledJob.length, 1);
+  const manual = await request('POST', `/v1/sources/${source.id}/crawl`, {}, owner.accessToken);
+  assert.equal(manual.jobId, scheduledJob[0].id);
+  await request('POST', `/v1/jobs/${manual.jobId}/cancel`, {}, owner.accessToken);
+  await request('PUT', `/v1/sources/${source.id}/schedule`, { enabled: false, intervalSeconds: 3600 }, owner.accessToken);
+  assert.equal(await dispatcher.schedule(new Date(due.getTime() + 7_200_000)), 0);
+  const finishedCancel = await app.inject({ method: 'POST', url: `/v1/jobs/${batch.jobId}/cancel`, headers: { authorization: `Bearer ${owner.accessToken}` } });
+  assert.equal(finishedCancel.statusCode, 409);
+
   // Concurrent refreshes serialize: one rotates; the reuse attempt revokes its family.
   const auth = new AuthService(db, config);
   const session = await auth.login(`owner-${suffix}@example.com`, 'integration-password-123');
@@ -140,8 +235,10 @@ try {
   assert.equal(races.filter(result => result.status === 'fulfilled').length, 1);
   const winner = races.find(result => result.status === 'fulfilled').value;
   await assert.rejects(auth.refresh(winner.refreshToken), /reuse detected/);
-  console.log('PASS: registration, tenants, async indexing, JS SDK, Arabic/English, typos, facets, autocomplete, clicks, rebuild, rollback incremental crawl and refresh reuse');
+  console.log('PASS: registration, tenants, async indexing, JS SDK, Arabic/English, typos, facets, autocomplete, clicks, rebuild, rollback, incremental crawl, durable schedules, cancellation and refresh reuse');
 } finally {
+  clearInterval(timer);
+  await dispatching;
   if (site) { site.closeAllConnections(); await new Promise(resolve => site.close(resolve)); }
   await worker.close();
   await Promise.all(Object.values(queues).map(queue => queue.close()));

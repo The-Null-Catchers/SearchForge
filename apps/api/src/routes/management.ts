@@ -1,7 +1,6 @@
-import { randomUUID } from "node:crypto";
 import type { FastifyInstance, FastifyRequest } from "fastify";
-import type { Queue } from "bullmq";
-import { and, desc, eq } from "drizzle-orm";
+import { enqueueCrawl } from "@searchforge/queue";
+import { and, desc, eq, sql } from "drizzle-orm";
 import {
   apiKeys,
   auditLogs,
@@ -23,13 +22,13 @@ import type { AuthService } from "../auth.js";
 type Db = ReturnType<typeof createDatabase>["db"];
 const roleWeight = { viewer: 0, developer: 1, admin: 2, owner: 3 } as const;
 
-function bearer(request: FastifyRequest): string {
+export function bearer(request: FastifyRequest): string {
   const header = request.headers.authorization;
   if (!header?.startsWith("Bearer ")) throw new AppError("UNAUTHENTICATED", "Access token required", 401);
   return header.slice(7);
 }
 
-async function projectAccess(db: Db, userId: string, projectId: string, minimum: keyof typeof roleWeight) {
+export async function projectAccess(db: Db, userId: string, projectId: string, minimum: keyof typeof roleWeight) {
   const [row] = await db.select({
     projectId: projects.id,
     organizationId: projects.organizationId,
@@ -47,8 +46,7 @@ export async function managementRoutes(
   app: FastifyInstance,
   db: Db,
   auth: AuthService,
-  keyService: ApiKeyService,
-  crawlQueue: Queue
+  keyService: ApiKeyService
 ) {
   app.post("/v1/projects/:projectId/sources", async (request, reply) => {
     const claims = await auth.verifyAccess(bearer(request));
@@ -84,23 +82,7 @@ export async function managementRoutes(
     if (!source) throw new AppError("SOURCE_NOT_FOUND", "Source not found", 404);
     await projectAccess(db, claims.userId, source.projectId, "developer");
 
-    const databaseJobId = randomUUID();
-    const externalJobId = randomUUID();
-    await db.insert(jobs).values({
-      id: databaseJobId,
-      projectId: source.projectId,
-      sourceId,
-      externalJobId,
-      type: "crawl",
-      state: "queued",
-      phase: "queued",
-      progress: { discovered: 0, processed: 0, failed: 0 }
-    });
-    await crawlQueue.add(
-      "crawl-source",
-      { databaseJobId, projectId: source.projectId, sourceId },
-      { jobId: externalJobId, priority: 5 }
-    );
+    const databaseJobId = await db.transaction(tx => enqueueCrawl(tx, source.projectId, sourceId));
     return reply.code(202).send({ jobId: databaseJobId });
   });
 
@@ -219,6 +201,7 @@ export async function managementRoutes(
     }
 
     await db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${params.indexId}, 0))`);
       await tx.update(indexVersions).set({ state: "retired", updatedAt: new Date() })
         .where(and(eq(indexVersions.indexId, params.indexId), eq(indexVersions.state, "active")));
       await tx.update(indexVersions).set({ state: "active", activatedAt: new Date(), updatedAt: new Date() })

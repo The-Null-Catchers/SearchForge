@@ -9,6 +9,7 @@ import {
   projects,
   searchEvents,
   sources,
+  crawlSchedules,
   type createDatabase
 } from "@searchforge/db";
 import { AppError } from "@searchforge/shared";
@@ -128,11 +129,12 @@ export async function dashboardRoutes(app: FastifyInstance, db: Db, auth: AuthSe
     const claims = await auth.verifyAccess(bearer(request));
     const { projectId } = z.object({ projectId: z.string().uuid() }).parse(request.params);
     await ensureProjectAccess(db, claims.userId, projectId);
-    const [sourceRows, indexRows, jobRows] = await Promise.all([
+    const [sourceRows, indexRows, jobRows, scheduleRows] = await Promise.all([
       db.select().from(sources).where(eq(sources.projectId, projectId)).orderBy(desc(sources.updatedAt)),
       db.select().from(indexes).where(eq(indexes.projectId, projectId)).orderBy(desc(indexes.updatedAt)),
-      db.select().from(jobs).where(eq(jobs.projectId, projectId)).orderBy(desc(jobs.createdAt)).limit(25)
+      db.select().from(jobs).where(eq(jobs.projectId, projectId)).orderBy(desc(jobs.createdAt)).limit(25),
+      db.select({ schedule: crawlSchedules }).from(crawlSchedules).innerJoin(sources, eq(sources.id, crawlSchedules.sourceId)).where(eq(sources.projectId, projectId))
     ]);
-    return { sources: sourceRows, indexes: indexRows, jobs: jobRows };
+    return { sources: sourceRows, indexes: indexRows, jobs: jobRows, schedules: scheduleRows.map(row => row.schedule) };
   });
 }
