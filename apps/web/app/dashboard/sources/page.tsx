@@ -1,11 +1,15 @@
 "use client";
-import { FormEvent } from "react";
+import { FormEvent, useState } from "react";
 import { useProject } from "../../../components/project-context";
+import { CrawlExplorer } from "../../../components/crawl-explorer";
+import { SourceEditor } from "../../../components/source-editor";
 import { useSources } from "../../../lib/use-sources";
 
 export default function SourcesPage() {
   const { projectId, projects } = useProject();
-  const { data, error, busy, loading, add, crawl, cancel, schedule } = useSources(projectId);
+  const { data, error, busy, loading, add, update, crawl, cancel, schedule } = useSources(projectId);
+  const [selected, setSelected] = useState<{ id: string; pane: "rules" | "pages" } | null>(null);
+  const source = data.sources.find(item => item.id === selected?.id);
   const canEdit = ["owner", "admin", "developer"].includes(projects.find(p => p.id === projectId)?.role ?? "");
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -32,11 +36,13 @@ export default function SourcesPage() {
               onChange={event => void schedule(source.id, Number(event.target.value) || saved?.intervalSeconds || 86400, event.target.value !== "0")}>
               <option value="0">Off</option><option value="3600">Every hour</option><option value="21600">Every 6 hours</option><option value="86400">Daily</option><option value="604800">Weekly</option>
             </select></td><td>{saved?.enabled ? new Date(saved.nextRunAt).toLocaleString() : "—"}</td>
-            <td>{canEdit && <button className="btn" disabled={!!busy} onClick={() => void crawl(source.id)}>{active ? "Use existing crawl" : "Run crawl"}</button>}</td></tr>;
+            <td><div className="toolbar"><button className="btn" onClick={() => setSelected({ id: source.id, pane: "pages" })}>Pages</button>{canEdit && <><button className="btn" onClick={() => setSelected({ id: source.id, pane: "rules" })}>Rules</button><button className="btn" disabled={!!busy} onClick={() => void crawl(source.id)}>{active ? "Use existing crawl" : "Run crawl"}</button></>}</div></td></tr>;
         })}
         {data.sources.length === 0 && <tr><td colSpan={5} className="empty">{loading ? "Loading sources…" : "No sources yet. Add a website to start indexing."}</td></tr>}
       </tbody></table></div>
     </section>
+    {source && selected?.pane === "rules" && canEdit && <SourceEditor key={source.id} source={source} disabled={!!busy} save={(name, config) => update(source.id, name, config)}/>}
+    {source && selected?.pane === "pages" && <CrawlExplorer key={source.id} sourceId={source.id} name={source.name}/>}
     <section className="card" style={{ marginTop: 14 }}><div className="card-head"><h2>Recent jobs</h2><span className="muted">Cancellation keeps the active search version available</span></div>
       <div className="table-wrap"><table><thead><tr><th>Type</th><th>Status</th><th>Phase</th><th>Processed / errors</th><th>Created</th><th>Actions</th></tr></thead><tbody>
         {data.jobs.map(job => <tr key={job.id}><td>{job.type}</td><td><span className="badge">{job.cancelRequestedAt && job.state === "running" ? "cancelling" : job.state}</span></td><td>{job.phase}</td>

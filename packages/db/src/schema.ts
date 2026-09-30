@@ -291,7 +291,8 @@ export const crawlPages = pgTable("crawl_pages", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
 }, (t) => ({
   jobUrlUnique: uniqueIndex("crawl_pages_job_url_uq").on(t.jobId, t.normalizedUrl),
-  sourceStatusIndex: index("crawl_pages_source_status_idx").on(t.sourceId, t.status)
+  sourceStatusIndex: index("crawl_pages_source_status_idx").on(t.sourceId, t.status),
+  sourceCreatedIndex: index("crawl_pages_source_created_idx").on(t.sourceId, t.createdAt, t.id)
 }));
 
 

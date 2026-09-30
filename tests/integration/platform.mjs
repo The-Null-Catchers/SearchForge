@@ -34,6 +34,7 @@ worker.on('error', error => console.error(error));
 const app = await buildServer();
 let organizationId;
 let otherUserId;
+let viewerId;
 let site;
 const { createQueues } = await import("../../packages/queue/dist/index.js");
 const queues = createQueues(redis);
@@ -148,6 +149,66 @@ try {
   assert.equal(unchanged.indexJobId, undefined);
 
 
+
+  // Console explorer reads real active postings and paginates without repeating IDs.
+  const consoleBase = `/v1/console/indexes/${project.index.id}`;
+  const firstDocuments = await request('GET', `${consoleBase}/documents?limit=2`, undefined, owner.accessToken);
+  assert.equal(firstDocuments.documents.length, 2);
+  assert.ok(firstDocuments.nextAfter);
+  const secondDocuments = await request('GET', `${consoleBase}/documents?limit=2&after=${encodeURIComponent(firstDocuments.nextAfter)}`, undefined, owner.accessToken);
+  assert.ok(secondDocuments.documents.every(row => !firstDocuments.documents.some(first => first.documentId === row.documentId)));
+  const inspected = await request('GET', `${consoleBase}/documents/js`, undefined, owner.accessToken);
+  assert.equal(inspected.state, 'indexed');
+  assert.ok(inspected.terms.some(term => term.term === 'javascript' && term.field === 'title' && term.frequency === 1 && term.positions.includes(0)));
+  const filteredDocuments = await request('GET', `${consoleBase}/documents?q=JavaScript`, undefined, owner.accessToken);
+  assert.deepEqual(filteredDocuments.documents.map(row => row.documentId), ['js']);
+  const deniedDocuments = await app.inject({ method: 'GET', url: `${consoleBase}/documents`, headers: { authorization: `Bearer ${stranger.accessToken}` } });
+  assert.equal(deniedDocuments.statusCode, 403);
+  const missingDocument = await app.inject({ method: 'GET', url: `${consoleBase}/documents/missing`, headers: { authorization: `Bearer ${owner.accessToken}` } });
+  assert.equal(missingDocument.statusCode, 404);
+
+  // A viewer may inspect but cannot rebuild, delete or edit source rules.
+  const viewer = await request('POST', '/v1/auth/register', { email: `viewer-${suffix}@example.com`, password: 'integration-password-123' });
+  viewerId = viewer.user.id;
+  await pool.query("INSERT INTO memberships (organization_id, user_id, role) VALUES ($1, $2, 'viewer')", [organizationId, viewerId]);
+  assert.equal((await request('GET', `${consoleBase}/documents/js`, undefined, viewer.accessToken)).state, 'indexed');
+  for (const [method, url, payload] of [['POST', `${consoleBase}/rebuild`, undefined], ['DELETE', `${consoleBase}/documents/js`, undefined],
+    ['PUT', `/v1/sources/${source.id}`, { name: source.name, config: source.config }]]) {
+    const response = await app.inject({ method, url, ...(payload ? { payload } : {}), headers: { authorization: `Bearer ${viewer.accessToken}` } });
+    assert.equal(response.statusCode, 403);
+  }
+
+  // Source rule validation and audit are exercised without weakening robots enforcement.
+  const invalidRules = await app.inject({ method: 'PUT', url: `/v1/sources/${source.id}`, payload: { name: 'Unsafe', config: { ...source.config, respectRobots: false } }, headers: { authorization: `Bearer ${owner.accessToken}` } });
+  assert.equal(invalidRules.statusCode, 400);
+  const rules = await request('PUT', `/v1/sources/${source.id}`, { name: 'Fixture updated', config: { ...source.config, maxDepth: 1, exclude: ['/private/**'] } }, owner.accessToken);
+  assert.equal(rules.config.maxDepth, 1);
+  assert.equal(rules.config.respectRobots, true);
+  assert.equal((await pool.query("SELECT count(*) FROM audit_logs WHERE action = 'source.rules_updated' AND target_id = $1", [source.id])).rows[0].count, '1');
+  await pool.query("UPDATE crawl_pages SET created_at = '2026-01-01T12:00:00.123456Z' WHERE source_id = $1", [source.id]);
+  const crawlFirst = await request('GET', `/v1/sources/${source.id}/pages?limit=1`, undefined, owner.accessToken);
+  const crawlSecond = await request('GET', `/v1/sources/${source.id}/pages?limit=1&cursor=${crawlFirst.nextCursor}`, undefined, owner.accessToken);
+  assert.notEqual(crawlFirst.pages[0].id, crawlSecond.pages[0].id);
+  const changedCursor = await app.inject({ method: 'GET', url: `/v1/sources/${source.id}/pages?limit=1&status=failed&cursor=${crawlFirst.nextCursor}`, headers: { authorization: `Bearer ${owner.accessToken}` } });
+  assert.equal(changedCursor.statusCode, 400);
+  const unchangedPages = await request('GET', `/v1/sources/${source.id}/pages?status=unchanged`, undefined, owner.accessToken);
+  assert.ok(unchangedPages.pages.length > 0 && unchangedPages.pages.every(page => page.status === 'unchanged'));
+
+  // Deletion commits its rebuild atomically; current active search remains until publication.
+  await worker.pause();
+  const versionBeforeDelete = (await search.search('search')).indexVersion;
+  const removal = await request('DELETE', `${consoleBase}/documents/db`, undefined, owner.accessToken);
+  const deleted = await request('GET', `${consoleBase}/documents/db`, undefined, owner.accessToken);
+  assert.equal(deleted.state, 'deleted');
+  assert.equal(deleted.inActiveVersion, true);
+  assert.equal((await search.search('search')).indexVersion, versionBeforeDelete);
+  await worker.resume();
+  await waitJob(removal.jobId, owner.accessToken);
+  assert.equal((await request('GET', `${consoleBase}/documents/db`, undefined, owner.accessToken)).inActiveVersion, false);
+  assert.ok((await request('GET', `${consoleBase}/documents?status=deleted`, undefined, owner.accessToken)).documents.some(row => row.documentId === 'db'));
+  const rebuild = await request('POST', `${consoleBase}/rebuild`, {}, owner.accessToken);
+  await waitJob(rebuild.jobId, owner.accessToken);
+
   // Outbox survives an interrupted Redis enqueue and duplicate dispatch attempts.
   await worker.pause();
   clearInterval(timer);
@@ -235,7 +296,7 @@ try {
   assert.equal(races.filter(result => result.status === 'fulfilled').length, 1);
   const winner = races.find(result => result.status === 'fulfilled').value;
   await assert.rejects(auth.refresh(winner.refreshToken), /reuse detected/);
-  console.log('PASS: registration, tenants, async indexing, JS SDK, Arabic/English, typos, facets, autocomplete, clicks, rebuild, rollback, incremental crawl, durable schedules, cancellation and refresh reuse');
+  console.log('PASS: registration, tenants, async indexing, JS SDK, Arabic/English, typos, facets, autocomplete, clicks, rebuild, rollback, incremental crawl, durable schedules, explorers, source rules, cancellation and refresh reuse');
 } finally {
   clearInterval(timer);
   await dispatching;
@@ -245,6 +306,7 @@ try {
   await app.close();
   if (organizationId) await pool.query('DELETE FROM organizations WHERE id = $1', [organizationId]);
   // This test suite is for disposable service databases only.
+  if (viewerId) await pool.query('DELETE FROM users WHERE id = $1', [viewerId]);
   if (otherUserId) await pool.query('DELETE FROM users WHERE id = $1', [otherUserId]);
   await redis.quit();
   await pool.end();

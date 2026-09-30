@@ -179,6 +179,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@searchforge/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       lucide-react:
         specifier: ^0.542.0
         version: 0.542.0(react@19.3.0)

@@ -6,7 +6,7 @@ RUN pnpm install --frozen-lockfile
 ARG NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN pnpm --filter @searchforge/web build
+RUN pnpm --filter @searchforge/web... build
 
 FROM node:22-alpine
 ENV NODE_ENV=production
