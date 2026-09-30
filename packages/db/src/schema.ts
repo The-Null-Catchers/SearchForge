@@ -312,4 +312,7 @@ export const jobOutbox = pgTable("job_outbox", {
   priority: integer("priority").notNull().default(5),
   dispatchedAt: timestamp("dispatched_at", { withTimezone: true }),
   ...timestamps
-}, t => ({ pendingIndex: index("job_outbox_pending_idx").on(t.dispatchedAt, t.createdAt) }));
+}, t => ({
+  pendingIndex: index("job_outbox_pending_idx").on(t.dispatchedAt, t.createdAt),
+  recoveryIndex: index("job_outbox_recovery_idx").on(t.updatedAt, t.jobId)
+}));
