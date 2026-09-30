@@ -49,6 +49,7 @@ Automated backup scripts and a rehearsed restore test remain release requirement
 ## Release status
 
 This is a working foundation under review, not a certified production release.
-See docs/status.md for tested behavior and remaining requirements. Docker image
-builds and the full Caddy stack must be exercised on a Docker host; local Node
-checks alone do not verify container deployment.
+See docs/status.md for tested behavior and remaining requirements. CI run 36715821234 built all images, started the development Compose stack
+and verified API readiness plus the login page through Caddy. This does not
+verify HTTPS on a public VPS, production SMTP or backup/restore; those remain
+release requirements.

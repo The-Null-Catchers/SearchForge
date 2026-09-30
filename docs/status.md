@@ -33,9 +33,10 @@ type checking.
 
 Account recovery/verification pages and container startup still require end-to-end
 verification. All container images built successfully in CI, including the pinned MinIO
-source build. Compose exposed a localhost health-probe address mismatch; explicit
-IPv4 loopback probes replace localhost. Full startup verification is pending the
-next smoke run. No successful Docker smoke result is claimed. Browser E2E remains release work.
+source build. Explicit IPv4 loopback health probes fixed the Compose startup failure.
+CI run 36715821234 passed all four jobs: Node build/unit/types/integration, Dart,
+security baseline and full container smoke. Caddy routed API readiness and the
+login page successfully. Browser E2E remains release work.
 
 ## Remaining before MVP release
 
