@@ -209,3 +209,52 @@ CREATE TABLE IF NOT EXISTS usage_counters (
   documents bigint NOT NULL DEFAULT 0,
   PRIMARY KEY (project_id, period)
 );
+
+
+CREATE TABLE IF NOT EXISTS documents (
+  index_id uuid NOT NULL REFERENCES indexes(id) ON DELETE CASCADE,
+  document_id varchar(200) NOT NULL,
+  source_id uuid REFERENCES sources(id) ON DELETE SET NULL,
+  body jsonb NOT NULL,
+  content_hash varchar(128),
+  deleted_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (index_id, document_id)
+);
+CREATE INDEX IF NOT EXISTS documents_source_idx ON documents(source_id);
+CREATE INDEX IF NOT EXISTS documents_updated_idx ON documents(index_id, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS synonym_sets (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id uuid NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  name varchar(120) NOT NULL,
+  terms jsonb NOT NULL,
+  one_way boolean NOT NULL DEFAULT false,
+  enabled boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS synonym_sets_project_idx ON synonym_sets(project_id);
+
+CREATE TABLE IF NOT EXISTS crawl_pages (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  job_id uuid NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+  source_id uuid NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+  url text NOT NULL,
+  normalized_url text NOT NULL,
+  depth integer NOT NULL DEFAULT 0,
+  status varchar(32) NOT NULL,
+  http_status integer,
+  response_time_ms integer,
+  content_type varchar(160),
+  canonical_url text,
+  content_hash varchar(128),
+  etag text,
+  last_modified text,
+  error text,
+  crawled_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(job_id, normalized_url)
+);
+CREATE INDEX IF NOT EXISTS crawl_pages_source_status_idx ON crawl_pages(source_id, status);

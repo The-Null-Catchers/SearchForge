@@ -8,6 +8,7 @@ x-app-env: &app-env
   MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-searchforge}
   MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-searchforge-local}
   MINIO_BUCKET: ${MINIO_BUCKET:-searchforge}
+  INDEX_STORAGE_PATH: ${INDEX_STORAGE_PATH:-/data/indexes}
 
 services:
   postgres:
@@ -52,6 +53,7 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
+    volumes: [index_data:/data/indexes]
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:4000/health/live"]
       interval: 10s
@@ -78,6 +80,7 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
+    volumes: [index_data:/data/indexes]
 
   web:
     build:
@@ -118,3 +121,4 @@ volumes:
   caddy_data:
   caddy_config:
   grafana_data:
+  index_data:

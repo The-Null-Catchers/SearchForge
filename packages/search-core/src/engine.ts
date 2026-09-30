@@ -1,4 +1,4 @@
-import type { FilterCondition, IndexSettings, SearchRequest } from "@searchforge/shared";
+import type { SearchRequest } from "@searchforge/shared";
 import { Analyzer } from "./analyzer.js";
 import { damerauLevenshtein, lowerBound } from "./distance.js";
 import type { CoreSearchResponse, SearchCore, SearchDocument, Segment, TermPostings } from "./types.js";

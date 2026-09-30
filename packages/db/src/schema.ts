@@ -240,3 +240,53 @@ export const usageCounters = pgTable("usage_counters", {
 }, (t) => ({
   pk: primaryKey({ columns: [t.projectId, t.period] })
 }));
+
+
+export const documents = pgTable("documents", {
+  indexId: uuid("index_id").notNull().references(() => indexes.id, { onDelete: "cascade" }),
+  documentId: varchar("document_id", { length: 200 }).notNull(),
+  sourceId: uuid("source_id").references(() => sources.id, { onDelete: "set null" }),
+  body: jsonb("body").notNull().$type<Record<string, unknown>>(),
+  contentHash: varchar("content_hash", { length: 128 }),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  ...timestamps
+}, (t) => ({
+  pk: primaryKey({ columns: [t.indexId, t.documentId] }),
+  sourceIndex: index("documents_source_idx").on(t.sourceId),
+  updatedIndex: index("documents_updated_idx").on(t.indexId, t.updatedAt)
+}));
+
+export const synonymSets = pgTable("synonym_sets", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 120 }).notNull(),
+  terms: jsonb("terms").notNull().$type<string[]>(),
+  oneWay: boolean("one_way").notNull().default(false),
+  enabled: boolean("enabled").notNull().default(true),
+  ...timestamps
+}, (t) => ({
+  projectIndex: index("synonym_sets_project_idx").on(t.projectId)
+}));
+
+export const crawlPages = pgTable("crawl_pages", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  jobId: uuid("job_id").notNull().references(() => jobs.id, { onDelete: "cascade" }),
+  sourceId: uuid("source_id").notNull().references(() => sources.id, { onDelete: "cascade" }),
+  url: text("url").notNull(),
+  normalizedUrl: text("normalized_url").notNull(),
+  depth: integer("depth").notNull().default(0),
+  status: varchar("status", { length: 32 }).notNull(),
+  httpStatus: integer("http_status"),
+  responseTimeMs: integer("response_time_ms"),
+  contentType: varchar("content_type", { length: 160 }),
+  canonicalUrl: text("canonical_url"),
+  contentHash: varchar("content_hash", { length: 128 }),
+  etag: text("etag"),
+  lastModified: text("last_modified"),
+  error: text("error"),
+  crawledAt: timestamp("crawled_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+}, (t) => ({
+  jobUrlUnique: uniqueIndex("crawl_pages_job_url_uq").on(t.jobId, t.normalizedUrl),
+  sourceStatusIndex: index("crawl_pages_source_status_idx").on(t.sourceId, t.status)
+}));
