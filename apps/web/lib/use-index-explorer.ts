@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ConsoleDocumentDetail, ConsoleDocumentsPage } from "@searchforge/shared";
 import { api } from "./api";
 
@@ -21,9 +21,12 @@ export function useIndexExplorer(projectId: string | null) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [job, setJob] = useState<JobView | null>(null);
+  const activeScope = useRef("");
+  const inspection = useRef(0);
+  activeScope.current = `${projectId}:${indexId}`;
   useEffect(() => {
     const controller = new AbortController();
-    setIndexes([]); setIndexId(""); setDetail(null); setJob(null); setError("");
+    setIndexes([]); setIndexId(""); setDetail(null); setJob(null); setError(""); setBusy(false); setAfter(""); setQ(""); setStatus("live");
     if (!projectId) { setLoading(false); return; }
     setLoading(true);
     void api<{ indexes: IndexView[] }>(`/v1/projects/${projectId}/resources`, { signal: controller.signal })
@@ -61,23 +64,29 @@ export function useIndexExplorer(projectId: string | null) {
   }, [job]);
 
   const run = async (path: string, method: string, queued: boolean) => {
+    const scope = activeScope.current;
     setBusy(true); setError("");
     try {
       const result = await api<{ jobId?: string }>(path, { method });
+      if (scope !== activeScope.current) return true;
       if (queued && result.jobId) setJob({ id: result.jobId, state: "queued", phase: "queued", progress: {} });
       setRevision(value => value + 1);
       return true;
-    } catch (err) { setError(err instanceof Error ? err.message : "Operation failed"); return false; }
-    finally { setBusy(false); }
+    } catch (err) { if (scope === activeScope.current) setError(err instanceof Error ? err.message : "Operation failed"); return false; }
+    finally { if (scope === activeScope.current) setBusy(false); }
   };
   const inspect = useCallback(async (documentId: string) => {
+    const scope = activeScope.current;
+    const sequence = ++inspection.current;
     setBusy(true); setError("");
-    try { setDetail(await api<ConsoleDocumentDetail>(`/v1/console/indexes/${indexId}/documents/${encodeURIComponent(documentId)}`)); }
-    catch (err) { setError(err instanceof Error ? err.message : "Unable to inspect document"); }
-    finally { setBusy(false); }
+    try {
+      const result = await api<ConsoleDocumentDetail>(`/v1/console/indexes/${indexId}/documents/${encodeURIComponent(documentId)}`);
+      if (scope === activeScope.current && sequence === inspection.current) setDetail(result);
+    } catch (err) { if (scope === activeScope.current) setError(err instanceof Error ? err.message : "Unable to inspect document"); }
+    finally { if (scope === activeScope.current && sequence === inspection.current) setBusy(false); }
   }, [indexId]);
   return { indexes, indexId, versions, page, detail, job, loading, busy, error, status,
-    selectIndex: (id: string) => { setIndexId(id); setAfter(""); setDetail(null); setJob(null); },
+    selectIndex: (id: string) => { setIndexId(id); setAfter(""); setDetail(null); setJob(null); setBusy(false); },
     filter: (query: string, nextStatus: string) => { setQ(query); setStatus(nextStatus); setAfter(""); },
     next: () => setAfter(page.nextAfter ?? ""), first: () => setAfter(""), inspect,
     rebuild: () => run(`/v1/console/indexes/${indexId}/rebuild`, "POST", true),

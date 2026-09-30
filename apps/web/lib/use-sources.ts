@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { CrawlConfig } from "@searchforge/shared";
 import { api } from "./api";
 
@@ -15,15 +15,17 @@ export function useSources(projectId: string | null) {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
+  const activeProject = useRef(projectId);
+  activeProject.current = projectId;
   const load = useCallback(async (signal?: AbortSignal) => {
     if (!projectId) { setData(empty); setLoading(false); return; }
     const result = await api<Resources>(`/v1/projects/${projectId}/resources`, { signal });
-    if (!signal?.aborted) { setData(result); setLoading(false); }
+    if (!signal?.aborted && activeProject.current === projectId) { setData(result); setLoading(false); }
   }, [projectId]);
   useEffect(() => {
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
-    setData(empty); setLoading(true); setError("");
+    setData(empty); setLoading(true); setError(""); setBusy(null);
     const poll = async () => {
       try { await load(controller.signal); setError(""); }
       catch (err) { if (!controller.signal.aborted) { setError(err instanceof Error ? err.message : "Unable to load sources"); setLoading(false); } }
@@ -40,8 +42,8 @@ export function useSources(projectId: string | null) {
       await api(path, { method, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
       await load();
       return true;
-    } catch (err) { setError(err instanceof Error ? err.message : "Operation failed"); return false; }
-    finally { setBusy(null); }
+    } catch (err) { if (activeProject.current === projectId) setError(err instanceof Error ? err.message : "Operation failed"); return false; }
+    finally { if (activeProject.current === projectId) setBusy(null); }
   };
   return { data, loading, error, busy,
     add: (name: string, url: string) => mutate("add", `/v1/projects/${projectId}/sources`,

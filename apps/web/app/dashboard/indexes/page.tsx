@@ -19,7 +19,7 @@ export default function IndexesPage() {
     <p className="muted">Inspect stored documents and the exact terms in the active search version. Rebuilds preserve search availability.</p>
     {ex.error && <p role="alert" style={{ color: "var(--danger)" }}>{ex.error}</p>}
     <div className="card card-body toolbar" style={{ marginTop: 20 }}>
-      <label>Index <select className="input" value={ex.indexId} onChange={event => ex.selectIndex(event.target.value)}>
+      <label>Index <select className="input" value={ex.indexId} disabled={ex.busy} onChange={event => ex.selectIndex(event.target.value)}>
         {!ex.indexes.length && <option value="">No indexes</option>}{ex.indexes.map(index => <option key={index.id} value={index.id}>{index.name} · {index.slug}</option>)}
       </select></label>
       {canEdit && <button className="btn primary" disabled={!ex.indexId || ex.busy || pending} onClick={() => void ex.rebuild()}>Rebuild index</button>}
@@ -36,7 +36,7 @@ export default function IndexesPage() {
     </section>}
     {ex.indexId && <div className="split" style={{ marginTop: 14 }}>
       <section className="card"><div className="card-head"><h2>Stored documents</h2><span className="muted">Metadata browser</span></div>
-        <form className="toolbar card-body" onSubmit={filter}><input className="input" name="q" placeholder="Filter ID, title or content" aria-label="Filter documents" maxLength={200}/>
+        <form key={ex.indexId} className="toolbar card-body" onSubmit={filter}><input className="input" name="q" placeholder="Filter ID, title or content" aria-label="Filter documents" maxLength={200}/>
           <select className="input" name="status" aria-label="Document state" defaultValue="live"><option value="live">Live documents</option><option value="deleted">Deleted documents</option><option value="all">All documents</option></select>
           <button className="btn" disabled={ex.loading}>Apply</button>
         </form>
