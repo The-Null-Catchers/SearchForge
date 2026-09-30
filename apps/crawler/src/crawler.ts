@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 import picomatch from "picomatch";
 import {
   crawlPages,
@@ -37,7 +37,8 @@ class Semaphore {
 }
 
 export class CrawlRunner {
-  private readonly robots = new Map<string, RobotsPolicy>();
+  private readonly robots = new Map<string, { policy: RobotsPolicy; expiresAt: number }>();
+  private readonly delaySemaphores = new Map<string, Semaphore>();
   private readonly domainSemaphores = new Map<string, Semaphore>();
   private readonly lastDomainFetch = new Map<string, number>();
 
@@ -57,39 +58,34 @@ export class CrawlRunner {
   private async robotsFor(url: URL, config: CrawlConfig): Promise<RobotsPolicy> {
     const origin = url.origin;
     const cached = this.robots.get(origin);
-    if (cached) return cached;
-    if (!config.respectRobots) {
-      const policy = RobotsPolicy.parse("User-agent: *\nAllow: /");
-      this.robots.set(origin, policy);
-      return policy;
-    }
-
-    try {
-      const response = await safeFetch(new URL("/robots.txt", origin).toString(), {
-        userAgent: this.userAgent,
-        timeoutMs: config.requestTimeoutMs,
-        maxBytes: 1024 * 1024,
-        allowPrivateNetworks: this.allowPrivateNetworks
-      });
-      const policy = response.status >= 200 && response.status < 300
-        ? RobotsPolicy.parse(new TextDecoder().decode(response.body))
-        : RobotsPolicy.parse("User-agent: *\nAllow: /");
-      this.robots.set(origin, policy);
-      return policy;
-    } catch {
-      const policy = RobotsPolicy.parse("User-agent: *\nAllow: /");
-      this.robots.set(origin, policy);
-      return policy;
-    }
+    if (cached && cached.expiresAt > Date.now()) return cached.policy;
+    const response = await safeFetch(new URL("/robots.txt", origin).toString(), {
+      userAgent: this.userAgent, timeoutMs: config.requestTimeoutMs,
+      maxBytes: 1024 * 1024, allowPrivateNetworks: this.allowPrivateNetworks,
+      validateUrl: destination => {
+        if (!sameAllowedDomain(destination.toString(), config.allowedDomains)) throw new Error("Robots redirect outside allowed domains");
+      }
+    });
+    // Server/network failures stop this crawl rather than silently allowing access.
+    if (response.status >= 500 || response.status === 429) throw new Error(`Robots temporarily unavailable: HTTP ${response.status}`);
+    const policy = response.status >= 200 && response.status < 300
+      ? RobotsPolicy.parse(new TextDecoder().decode(response.body))
+      : RobotsPolicy.parse(response.status === 401 || response.status === 403 ? "User-agent: *\nDisallow: /" : "User-agent: *\nAllow: /");
+    this.robots.set(origin, { policy, expiresAt: Date.now() + 3_600_000 });
+    return policy;
   }
 
   private async obeyDelay(url: URL, config: CrawlConfig, policy: RobotsPolicy) {
     const delayMs = Math.max(0, (policy.crawlDelay(this.userAgent) ?? 0) * 1000);
     if (delayMs === 0) return;
-    const previous = this.lastDomainFetch.get(url.hostname) ?? 0;
-    const wait = previous + delayMs - Date.now();
-    if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
-    this.lastDomainFetch.set(url.hostname, Date.now());
+    const gate = this.delaySemaphores.get(url.hostname) ?? new Semaphore(1);
+    this.delaySemaphores.set(url.hostname, gate);
+    await gate.run(async () => {
+      const previous = this.lastDomainFetch.get(url.hostname) ?? 0;
+      const wait = previous + delayMs - Date.now();
+      if (wait > 0) await new Promise(resolve => setTimeout(resolve, wait));
+      this.lastDomainFetch.set(url.hostname, Date.now());
+    });
   }
 
   private matchesRules(url: string, config: CrawlConfig): boolean {
@@ -118,17 +114,20 @@ export class CrawlRunner {
           userAgent: this.userAgent,
           timeoutMs: config.requestTimeoutMs,
           maxBytes: 10 * 1024 * 1024,
-          allowPrivateNetworks: this.allowPrivateNetworks
+          allowPrivateNetworks: this.allowPrivateNetworks,
+          validateUrl: destination => {
+            if (!sameAllowedDomain(destination.toString(), config.allowedDomains)) throw new Error("Sitemap outside allowed domains");
+          }
         });
         if (response.status < 200 || response.status >= 300) continue;
         const parsed = parseSitemap(
           response.body,
           sitemapUrl.endsWith(".gz") || response.headers.get("content-type")?.includes("gzip") === true
         );
-        for (const entry of parsed.urls) if (this.matchesRules(entry.url, config)) seeds.push(entry.url);
+        for (const entry of parsed.urls) if (seeds.length < config.maxPages && this.matchesRules(entry.url, config)) seeds.push(entry.url);
         for (const nested of parsed.nested) if (!visited.has(nested)) pending.push(nested);
-      } catch {
-        // Sitemap failures do not stop ordinary crawling.
+      } catch (error) {
+        console.warn(JSON.stringify({ event: "sitemap.failed", url: sitemapUrl, error: error instanceof Error ? error.message : "Unknown failure" }));
       }
     }
     return seeds;
@@ -151,7 +150,15 @@ export class CrawlRunner {
 
     await this.db.update(jobs).set({ state: "running", phase: "discover", startedAt: new Date() }).where(eq(jobs.id, databaseJobId));
     const sitemapSeeds = (await Promise.all(config.startUrls.map((url) => this.sitemapSeeds(url, config)))).flat();
-    const frontier: FrontierItem[] = [...new Set([...config.startUrls, ...sitemapSeeds])].map((url) => ({ url, depth: 0 }));
+    const frontier: FrontierItem[] = [];
+    const scheduled = new Set<string>();
+    const enqueue = (input: string, depth: number) => {
+      const url = normalizeUrl(input);
+      if (scheduled.size >= config.maxPages || scheduled.has(url) || !this.matchesRules(url, config)) return;
+      scheduled.add(url);
+      frontier.push({ url, depth });
+    };
+    for (const url of [...sitemapSeeds, ...config.startUrls]) enqueue(url, 0);
     const seen = new Set<string>();
     const contentHashes = new Set<string>();
     const nearDuplicates: bigint[] = [];
@@ -188,16 +195,50 @@ export class CrawlRunner {
         this.domainSemaphores.set(url.hostname, semaphore);
 
         await semaphore.run(async () => {
+          processed += 1;
           try {
-            await this.obeyDelay(url, config, policy);
+            const [previous] = await this.db.select().from(crawlPages)
+              .where(and(eq(crawlPages.sourceId, sourceId), eq(crawlPages.normalizedUrl, normalized),
+                inArray(crawlPages.status, ["indexed", "unchanged"])))
+              .orderBy(desc(crawlPages.crawledAt)).limit(1);
+            const previousId = createHash("sha256").update(previous?.canonicalUrl ?? normalized).digest("hex").slice(0, 32);
+            const [existing] = previous ? await this.db.select({ id: documents.documentId }).from(documents)
+              .where(and(eq(documents.indexId, targetIndex.id), eq(documents.documentId, previousId), isNull(documents.deletedAt))).limit(1) : [];
+            const headers: Record<string, string> = {};
+            if (existing && previous?.etag) headers["if-none-match"] = previous.etag;
+            if (existing && previous?.lastModified) headers["if-modified-since"] = previous.lastModified;
             const response = await safeFetch(normalized, {
               userAgent: this.userAgent,
               timeoutMs: config.requestTimeoutMs,
               maxBytes: 5 * 1024 * 1024,
               allowPrivateNetworks: this.allowPrivateNetworks,
-              maxRedirects: 5
+              maxRedirects: 5,
+              headers,
+              validateUrl: async destination => {
+                if (!this.matchesRules(destination.toString(), config)) throw new Error("Redirect outside allowed crawl rules");
+                const destinationPolicy = await this.robotsFor(destination, config);
+                if (!destinationPolicy.allows(destination, this.userAgent)) throw new Error("Redirect blocked by robots.txt");
+                await this.obeyDelay(destination, config, destinationPolicy);
+              }
             });
-            processed += 1;
+            if (response.status === 304) {
+              if (!previous || !existing || Object.keys(headers).length === 0) throw new Error("Unexpected 304 without a stored document");
+              if (item.depth < config.maxDepth) {
+                for (const link of previous.links) {
+                  try { enqueue(link, item.depth + 1); } catch { /* Stored malformed link is ignored. */ }
+                }
+              }
+              await this.db.insert(crawlPages).values({
+                jobId: databaseJobId, sourceId, url: item.url, normalizedUrl: normalized,
+                depth: item.depth, status: "unchanged", httpStatus: 304,
+                responseTimeMs: Math.round(response.elapsedMs), contentType: previous.contentType,
+                canonicalUrl: previous.canonicalUrl, contentHash: previous.contentHash, links: previous.links,
+                etag: response.headers.get("etag") ?? previous.etag,
+                lastModified: response.headers.get("last-modified") ?? previous.lastModified,
+                crawledAt: new Date()
+              }).onConflictDoNothing();
+              return;
+            }
             const contentType = response.headers.get("content-type") ?? "";
             if (!contentType.includes("text/html") && !contentType.includes("application/xhtml+xml")) {
               await this.db.insert(crawlPages).values({
@@ -263,7 +304,7 @@ export class CrawlRunner {
                 for (const link of extracted.links) {
                   try {
                     const candidate = normalizeUrl(link, response.url);
-                    if (!seen.has(candidate) && this.matchesRules(candidate, config)) frontier.push({ url: candidate, depth: item.depth + 1 });
+                    enqueue(candidate, item.depth + 1);
                   } catch {
                     // Ignore malformed links.
                   }
@@ -283,13 +324,13 @@ export class CrawlRunner {
               contentType,
               canonicalUrl: extracted.canonicalUrl,
               contentHash: extracted.contentHash,
+              links: extracted.links,
               etag: response.headers.get("etag"),
               lastModified: response.headers.get("last-modified"),
               crawledAt: new Date()
             }).onConflictDoNothing();
           } catch (error) {
             failed += 1;
-            processed += 1;
             await this.db.insert(crawlPages).values({
               jobId: databaseJobId,
               sourceId,
@@ -322,6 +363,8 @@ export class CrawlRunner {
       updatedAt: new Date()
     }).where(eq(jobs.id, databaseJobId));
     await this.redis.publish(`job:${databaseJobId}`, JSON.stringify({ status: "completed", processed, failed, indexed }));
+
+    if (indexed === 0 && targetIndex.activeVersionId) return { processed, failed, indexed };
 
     const indexJobId = randomUUID();
     const externalJobId = randomUUID();

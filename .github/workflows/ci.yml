@@ -32,7 +32,11 @@ jobs:
         options: >-
           --health-cmd "redis-cli ping"
           --health-interval 5s --health-timeout 3s --health-retries 20
+      smtp:
+        image: axllent/mailpit:latest
+        ports: ["1025:1025"]
     env:
+      SMTP_URL: smtp://localhost:1025
       POSTGRES_URL: postgresql://searchforge:integration@localhost:5432/searchforge
       REDIS_URL: redis://localhost:6379
     timeout-minutes: 20
@@ -80,3 +84,22 @@ jobs:
       - run: dart pub get
       - run: dart analyze --fatal-infos
       - run: dart test
+
+  container-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - run: cp .env.example .env
+      - name: Build and start the development stack
+        run: docker compose up -d --build --wait --wait-timeout 180
+      - name: Verify routed API and dashboard
+        run: |
+          curl --fail --retry 10 --retry-delay 2 http://localhost/health/ready
+          curl --fail http://localhost/login
+      - name: Capture service logs
+        if: always()
+        run: docker compose logs --tail=100
+      - name: Stop disposable stack
+        if: always()
+        run: docker compose down -v

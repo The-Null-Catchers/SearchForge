@@ -107,7 +107,7 @@ export const crawlConfigSchema = z.object({
   requestTimeoutMs: z.number().int().min(1000).max(120_000).default(15_000),
   concurrency: z.number().int().min(1).max(64).default(8),
   perDomainConcurrency: z.number().int().min(1).max(16).default(2),
-  respectRobots: z.boolean().default(true),
+  respectRobots: z.literal(true).default(true),
   storeRawHtml: z.boolean().default(false)
 });
 export type CrawlConfig = z.infer<typeof crawlConfigSchema>;

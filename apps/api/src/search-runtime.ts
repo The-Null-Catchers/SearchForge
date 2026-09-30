@@ -1,11 +1,18 @@
+import { access, mkdir } from "node:fs/promises";
+import { constants } from "node:fs";
 import { FileSegmentStore, SegmentSearchEngine, type Segment } from "@searchforge/search-core";
 
 export class SearchRuntime {
   private readonly store: FileSegmentStore;
   private readonly cache = new Map<string, Segment>();
 
-  constructor(root: string) {
+  constructor(private readonly root: string) {
     this.store = new FileSegmentStore(root);
+  }
+
+  async ready(): Promise<void> {
+    await mkdir(this.root, { recursive: true });
+    await access(this.root, constants.R_OK);
   }
 
   async segment(indexId: string, version: string, checksum?: string | null): Promise<Segment> {

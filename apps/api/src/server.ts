@@ -29,7 +29,7 @@ export async function buildServer() {
     },
     genReqId: () => randomUUID(),
     bodyLimit: 5 * 1024 * 1024,
-    trustProxy: true
+    trustProxy: (_address, hop) => hop < config.TRUST_PROXY_HOPS
   });
 
   const { db, pool } = createDatabase(config.POSTGRES_URL);
@@ -89,12 +89,13 @@ export async function buildServer() {
     try {
       await db.execute(sql`select 1`);
       const pong = await redis.ping();
+      await runtime.ready();
       if (pong !== "PONG") throw new Error("Redis ping failed");
       return { status: "ready", dependencies: { postgres: true, redis: true, indexStorage: true } };
     } catch (error) {
       return reply.code(503).send({
         status: "not_ready",
-        error: error instanceof Error ? error.message : "dependency failure"
+        error: "Required dependency is unavailable"
       });
     }
   });

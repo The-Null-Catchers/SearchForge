@@ -14,7 +14,8 @@ export type ParsedSitemap = {
 
 const parser = new XMLParser({
   ignoreAttributes: false,
-  trimValues: true
+  trimValues: true,
+  processEntities: true
 });
 
 function arrayify<T>(value: T | T[] | undefined): T[] {
@@ -23,8 +24,11 @@ function arrayify<T>(value: T | T[] | undefined): T[] {
 }
 
 export function parseSitemap(body: Uint8Array, gzipped = false): ParsedSitemap {
-  const bytes = gzipped ? gunzipSync(body) : Buffer.from(body);
+  const maxBytes = 10 * 1024 * 1024;
+  if (body.byteLength > maxBytes) throw new Error("Sitemap exceeds size limit");
+  const bytes = gzipped ? gunzipSync(body, { maxOutputLength: maxBytes }) : Buffer.from(body);
   const xml = bytes.toString("utf8");
+  if (/<!DOCTYPE|<!ENTITY/i.test(xml)) throw new Error("Sitemap entities are not allowed");
   const parsed = parser.parse(xml) as Record<string, unknown>;
   const urls: SitemapEntry[] = [];
   const nested: string[] = [];

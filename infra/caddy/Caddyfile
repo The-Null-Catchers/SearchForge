@@ -1,7 +1,3 @@
-{
-  email {$ACME_EMAIL}
-}
-
 {$SEARCHFORGE_DOMAIN::80} {
   encode zstd gzip
 

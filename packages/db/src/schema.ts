@@ -281,6 +281,7 @@ export const crawlPages = pgTable("crawl_pages", {
   contentType: varchar("content_type", { length: 160 }),
   canonicalUrl: text("canonical_url"),
   contentHash: varchar("content_hash", { length: 128 }),
+  links: jsonb("links").notNull().default([]).$type<string[]>(),
   etag: text("etag"),
   lastModified: text("last_modified"),
   error: text("error"),

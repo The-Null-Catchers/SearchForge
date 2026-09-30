@@ -2,7 +2,7 @@
 
 Use a Docker Engine installation with Compose v2, a domain whose DNS points to
 the VPS, and inbound ports 80/443. Copy .env.example to .env. Set NODE_ENV to
-production, SEARCHFORGE_DOMAIN to your hostname, ACME_EMAIL, WEB_ORIGIN and
+production, remove the development COMPOSE_PROFILES value, set SEARCHFORGE_DOMAIN to your hostname, WEB_ORIGIN and
 PUBLIC_WEB_URL to the HTTPS origin. Leave NEXT_PUBLIC_API_URL blank for same-origin
 requests through Caddy. Changing it requires rebuilding the web image.
 

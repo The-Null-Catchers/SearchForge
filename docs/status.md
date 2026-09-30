@@ -11,6 +11,7 @@ engine is used. Rust/Go search nodes are future extensions, not implemented.
 - Authentication route contracts and secure refresh-cookie attributes.
 - JavaScript SDK search, suggestions, indexing, clicks, cancellation and errors.
 - URL normalization, private-network checks and robots parsing.
+- DNS-pinned HTTP transport, redirect checks and bounded gzip sitemap parsing.
 - Monorepo application builds and type checking.
 
 ## Implemented, integration verification required
@@ -21,17 +22,15 @@ engine is used. Rust/Go search nodes are future extensions, not implemented.
 - Async document indexing, version activation and rollback.
 - Version allocation serialized across workers using PostgreSQL advisory locks.
 - Migration runner and dependency ordering in Compose.
-- Dart SDK search/filter/pagination/autocomplete/click/error handling.
+- Incremental conditional recrawl with stored links for 304 responses.
+- Dart SDK search/filter/pagination/autocomplete/click/error handling (CI passed).
 
-CI includes isolated PostgreSQL/Redis integration tests and Dart tests. Docker
-container builds, Compose startup and browser E2E still need explicit verification.
+CI includes isolated PostgreSQL/Redis integration tests and Dart tests. Container builds and Compose startup have a CI smoke job; browser E2E still needs
+explicit verification.
 
 ## Remaining before MVP release
 
-- Incremental HTTP requests using stored ETag/Last-Modified; the crawler currently
-  stores validators but does not yet send them on subsequent crawls.
-- DNS-pinned crawler transport, strict redirect-domain/robots checks, bounded
-  gzip sitemap expansion, per-page retries and reliable crawl-delay coordination.
+- Per-page crawl retries and durable recrawl scheduling.
 - Scheduler, cancellation, transactional queue outbox and cleanup lifecycle.
 - Compound AND/OR and date filters, query-bound cursors, normalized highlighting
   and efficient typo dictionaries for large vocabularies.

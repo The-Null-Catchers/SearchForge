@@ -1,4 +1,5 @@
-import { assertSafeUrl } from "./url.js";
+import { Agent, fetch } from "undici";
+import { resolveSafeDestination } from "./url.js";
 
 export type SafeFetchResult = {
   url: string;
@@ -17,13 +18,16 @@ export async function safeFetch(
     allowPrivateNetworks: boolean;
     headers?: Record<string, string>;
     maxRedirects?: number;
+    validateUrl?: (url: URL) => Promise<void> | void;
   }
 ): Promise<SafeFetchResult> {
   let current = input;
   const maxRedirects = options.maxRedirects ?? 5;
 
   for (let redirect = 0; redirect <= maxRedirects; redirect += 1) {
-    const url = await assertSafeUrl(current, options.allowPrivateNetworks);
+    const { url, address, family } = await resolveSafeDestination(current, options.allowPrivateNetworks);
+    await options.validateUrl?.(url);
+    const dispatcher = new Agent({ connect: { autoSelectFamily: false, lookup: (_hostname, _options, callback) => callback(null, address, family) } });
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), options.timeoutMs);
     const started = performance.now();
@@ -31,6 +35,7 @@ export async function safeFetch(
     try {
       const response = await fetch(url, {
         redirect: "manual",
+        dispatcher,
         signal: controller.signal,
         headers: {
           "user-agent": options.userAgent,
@@ -42,6 +47,7 @@ export async function safeFetch(
       if ([301, 302, 303, 307, 308].includes(response.status)) {
         const location = response.headers.get("location");
         if (!location) throw new Error("Redirect response is missing Location");
+        await response.body?.cancel();
         current = new URL(location, url).toString();
         continue;
       }
@@ -51,7 +57,7 @@ export async function safeFetch(
       if (!response.body) return {
         url: url.toString(),
         status: response.status,
-        headers: response.headers,
+        headers: new Headers([...response.headers.entries()]),
         body: new Uint8Array(),
         elapsedMs: performance.now() - started
       };
@@ -79,12 +85,13 @@ export async function safeFetch(
       return {
         url: url.toString(),
         status: response.status,
-        headers: response.headers,
+        headers: new Headers([...response.headers.entries()]),
         body,
         elapsedMs: performance.now() - started
       };
     } finally {
       clearTimeout(timeout);
+      await dispatcher.destroy();
     }
   }
   throw new Error("Too many redirects");

@@ -12,6 +12,7 @@ x-app-env: &app-env
   JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-local-development-access-secret-change-me-123456}
   JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-local-development-refresh-secret-change-me-123456}
   API_KEY_PEPPER: ${API_KEY_PEPPER:-local-development-api-key-pepper}
+  TRUST_PROXY_HOPS: 1
   WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:3000}
   PUBLIC_WEB_URL: ${PUBLIC_WEB_URL:-http://localhost:3000}
   SMTP_URL: ${SMTP_URL:-}
@@ -42,6 +43,11 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+
+  mailpit:
+    profiles: ["development"]
+    image: axllent/mailpit:latest
+    ports: ["127.0.0.1:8025:8025"]
 
   minio:
     restart: unless-stopped
@@ -151,7 +157,6 @@ services:
     image: caddy:2-alpine
     environment:
       SEARCHFORGE_DOMAIN: ${SEARCHFORGE_DOMAIN:-:80}
-      ACME_EMAIL: ${ACME_EMAIL:-}
     ports: ["80:80", "443:443"]
     volumes:
       - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro

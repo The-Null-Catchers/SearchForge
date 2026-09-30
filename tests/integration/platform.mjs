@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
 import { createRequire } from 'node:module';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -15,6 +16,7 @@ process.env.INDEX_STORAGE_PATH = storage;
 const require = createRequire(new URL('../../packages/queue/package.json', import.meta.url));
 const { Worker } = require('bullmq');
 const { buildServer } = await import('../../apps/api/dist/server.js');
+const { CrawlRunner } = await import('../../apps/crawler/dist/crawler.js');
 const { IndexBuilder } = await import('../../apps/indexer/dist/index-builder.js');
 const { createDatabase } = await import('../../packages/db/dist/index.js');
 const { createRedisConnection } = await import('../../packages/queue/dist/index.js');
@@ -29,6 +31,9 @@ worker.on('error', error => console.error(error));
 const app = await buildServer();
 let organizationId;
 let otherUserId;
+let site;
+const { createQueues } = await import("../../packages/queue/dist/index.js");
+const queues = createQueues(redis);
 
 async function request(method, url, payload, token) {
   const response = await app.inject({ method, url, ...(payload ? { payload } : {}),
@@ -89,6 +94,45 @@ try {
   await request('POST', `/v1/indexes/${project.index.id}/versions/${old.id}/activate`, {}, owner.accessToken);
   assert.equal((await search.search('search')).indexVersion, versionBefore);
 
+  // Trusted loopback fixture exercises real HTTP, extraction and incremental recrawl.
+  let rootConditional = 0;
+  let childConditional = 0;
+  let childVersion = 1;
+  site = createServer((req, res) => {
+    if (req.url === '/robots.txt') { res.end('User-agent: *\nAllow: /'); return; }
+    if (req.url === '/sitemap.xml') { res.writeHead(404); res.end(); return; }
+    const child = req.url === '/child';
+    const etag = child ? `"child-${childVersion}"` : '"root-1"';
+    if (req.headers['if-none-match']) { if (child) childConditional++; else rootConditional++; }
+    if (req.headers['if-none-match'] === etag) { res.writeHead(304); res.end(); return; }
+    res.setHeader('content-type', 'text/html');
+    res.setHeader('etag', etag);
+    res.end(child
+      ? `<html><title>Quantum telescopes</title><main>Galaxies planets observations spectroscopy universe astronomy version ${childVersion}</main></html>`
+      : '<html><title>Compiler documentation</title><main>Lexical parsing abstract syntax trees optimization machine instructions</main><a href="/child">Astronomy</a></html>');
+  });
+  await new Promise(resolve => site.listen(0, '127.0.0.1', resolve));
+  const source = await request('POST', `/v1/projects/${project.id}/sources`, {
+    name: 'Fixture', config: { startUrls: [`http://127.0.0.1:${site.address().port}`], maxPages: 10, maxDepth: 2 }
+  }, owner.accessToken);
+  const runner = new CrawlRunner(db, redis, queues.index, 'SearchForgeBot/1.0', true);
+  async function crawl() {
+    const { jobId } = await request('POST', `/v1/sources/${source.id}/crawl`, {}, owner.accessToken);
+    // No crawl worker is running here: invoke its real processor directly.
+    const result = await runner.run(jobId, source.id, project.id);
+    if (result.indexJobId) await waitJob(result.indexJobId, owner.accessToken);
+    return result;
+  }
+  assert.equal((await crawl()).indexed, 2);
+  childVersion = 2;
+  const incremental = await crawl();
+  assert.equal(rootConditional, 1);
+  assert.equal(childConditional, 1); // Found through the stored links of the 304 root.
+  assert.equal(incremental.indexed, 1);
+  const unchanged = await crawl();
+  assert.equal(unchanged.indexed, 0);
+  assert.equal(unchanged.indexJobId, undefined);
+
   // Concurrent refreshes serialize: one rotates; the reuse attempt revokes its family.
   const auth = new AuthService(db, config);
   const session = await auth.login(`owner-${suffix}@example.com`, 'integration-password-123');
@@ -96,9 +140,11 @@ try {
   assert.equal(races.filter(result => result.status === 'fulfilled').length, 1);
   const winner = races.find(result => result.status === 'fulfilled').value;
   await assert.rejects(auth.refresh(winner.refreshToken), /reuse detected/);
-  console.log('PASS: registration, tenants, async indexing, JS SDK, Arabic/English, typos, facets, autocomplete, clicks, rebuild, rollback and refresh reuse');
+  console.log('PASS: registration, tenants, async indexing, JS SDK, Arabic/English, typos, facets, autocomplete, clicks, rebuild, rollback incremental crawl and refresh reuse');
 } finally {
+  if (site) { site.closeAllConnections(); await new Promise(resolve => site.close(resolve)); }
   await worker.close();
+  await Promise.all(Object.values(queues).map(queue => queue.close()));
   await app.close();
   if (organizationId) await pool.query('DELETE FROM organizations WHERE id = $1', [organizationId]);
   // This test suite is for disposable service databases only.

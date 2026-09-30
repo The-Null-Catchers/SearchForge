@@ -21,33 +21,26 @@ export function normalizeUrl(input: string, base?: string): string {
 
 export function isBlockedAddress(address: string): boolean {
   const parsed = ipaddr.parse(address);
-  const range = parsed.range();
-  return new Set([
-    "unspecified",
-    "broadcast",
-    "multicast",
-    "linkLocal",
-    "loopback",
-    "private",
-    "carrierGradeNat",
-    "uniqueLocal",
-    "ipv4Mapped"
-  ]).has(range);
+  return parsed.range() !== "unicast";
+}
+
+export async function resolveSafeDestination(input: string, allowPrivateNetworks = false) {
+  const url = new URL(normalizeUrl(input));
+  const hostname = url.hostname.replace(/^\[|\]$/g, "");
+  const addresses = ipaddr.isValid(hostname)
+    ? [{ address: hostname, family: ipaddr.parse(hostname).kind() === "ipv4" ? 4 : 6 }]
+    : await lookup(hostname, { all: true, verbatim: true });
+  if (addresses.length === 0) throw new Error("Hostname did not resolve");
+  if (!allowPrivateNetworks && addresses.some(result => isBlockedAddress(result.address))) {
+    throw new Error("Blocked crawler destination");
+  }
+  // Pin this checked address to the actual socket. No second DNS lookup occurs.
+  const chosen = addresses[0]!;
+  return { url, address: chosen.address, family: chosen.family };
 }
 
 export async function assertSafeUrl(input: string, allowPrivateNetworks = false): Promise<URL> {
-  const normalized = normalizeUrl(input);
-  const url = new URL(normalized);
-  if (allowPrivateNetworks) return url;
-
-  const addresses = await lookup(url.hostname, { all: true, verbatim: true });
-  if (addresses.length === 0) throw new Error("Hostname did not resolve");
-  for (const result of addresses) {
-    if (isBlockedAddress(result.address)) {
-      throw new Error(`Blocked crawler destination: ${result.address}`);
-    }
-  }
-  return url;
+  return (await resolveSafeDestination(input, allowPrivateNetworks)).url;
 }
 
 export function sameAllowedDomain(url: string, allowedDomains: string[]): boolean {
