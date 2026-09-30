@@ -272,7 +272,9 @@ export class SegmentSearchEngine implements SearchCore {
         const right = getField(b.document, request.sort!.field);
         if (left === right) return b.score - a.score || a.id.localeCompare(b.id);
         const direction = request.sort!.direction === "asc" ? 1 : -1;
-        return ((left ?? "") < (right ?? "") ? -1 : 1) * direction;
+        const leftValue = typeof left === "number" ? left : String(left ?? "");
+        const rightValue = typeof right === "number" ? right : String(right ?? "");
+        return (leftValue < rightValue ? -1 : 1) * direction;
       });
     } else {
       ranked.sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));

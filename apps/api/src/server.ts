@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import Fastify from "fastify";
 import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
@@ -24,7 +25,7 @@ export async function buildServer() {
     logger: {
       level: config.NODE_ENV === "production" ? "info" : "debug"
     },
-    genReqId: () => crypto.randomUUID(),
+    genReqId: () => randomUUID(),
     bodyLimit: 5 * 1024 * 1024,
     trustProxy: true
   });

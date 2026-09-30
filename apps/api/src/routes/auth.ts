@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply } from "fastify";
 import { z } from "zod";
 import type { AuthService } from "../auth.js";
 
@@ -14,7 +14,7 @@ function bearer(header: string | undefined): string {
 }
 
 export async function authRoutes(app: FastifyInstance, auth: AuthService, production: boolean) {
-  const setRefresh = (reply: Parameters<FastifyInstance["post"]>[1] extends never ? never : any, token: string) => {
+  const setRefresh = (reply: FastifyReply, token: string) => {
     reply.setCookie("sf_refresh", token, {
       httpOnly: true,
       secure: production,
