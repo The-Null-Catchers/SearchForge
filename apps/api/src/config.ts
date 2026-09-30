@@ -11,7 +11,7 @@ const schema = z.object({
   WEB_ORIGIN: z.string().url().default("http://localhost:3000"),
   INDEX_STORAGE_PATH: z.string().default("./storage/indexes"),
   PUBLIC_WEB_URL: z.string().url().default("http://localhost:3000"),
-  SMTP_URL: z.string().min(1).optional(),
+  SMTP_URL: z.preprocess((value) => value === "" ? undefined : value, z.string().min(1).optional()),
   MAIL_FROM: z.string().default("SearchForge <no-reply@localhost>")
 });
 

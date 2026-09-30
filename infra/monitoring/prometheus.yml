@@ -7,3 +7,9 @@ scrape_configs:
   - job_name: searchforge-crawler
     static_configs:
       - targets: ["crawler:4010"]
+  - job_name: searchforge-indexer
+    static_configs:
+      - targets: ["indexer:4020"]
+  - job_name: searchforge-worker
+    static_configs:
+      - targets: ["worker:4030"]

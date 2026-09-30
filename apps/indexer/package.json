@@ -1,5 +1,5 @@
 {
-  "name": "@searchforge/worker",
+  "name": "@searchforge/indexer",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -13,6 +13,7 @@
   "dependencies": {
     "@searchforge/db": "workspace:*",
     "@searchforge/queue": "workspace:*",
+    "@searchforge/search-core": "workspace:*",
     "@searchforge/shared": "workspace:*",
     "bullmq": "^5.58.5",
     "drizzle-orm": "^0.44.5",
