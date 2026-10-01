@@ -64,7 +64,7 @@ export async function dashboardRoutes(app: FastifyInstance, db: Db, auth: AuthSe
 
     const [documentCount] = await db.select({ value: count() }).from(documents)
       .innerJoin(indexes, eq(indexes.id, documents.indexId))
-      .where(and(eq(indexes.projectId, projectId), sql`${documents.deletedAt} is null`));
+      .where(and(eq(indexes.projectId, projectId), sql`${documents.deletedAt} is null`, sql`${indexes.deletionRequestedAt} is null`));
     const [searchStats] = await db.select({
       requests: count(),
       averageLatencyMs: avg(searchEvents.latencyMs)
@@ -83,7 +83,7 @@ export async function dashboardRoutes(app: FastifyInstance, db: Db, auth: AuthSe
       activatedAt: indexVersions.activatedAt
     }).from(indexes)
       .leftJoin(indexVersions, eq(indexVersions.id, indexes.activeVersionId))
-      .where(eq(indexes.projectId, projectId));
+      .where(and(eq(indexes.projectId, projectId), sql`${indexes.deletionRequestedAt} is null`));
 
     const requests = Number(searchStats?.requests ?? 0);
     const zeros = Number(zeroResults?.value ?? 0);
@@ -131,7 +131,7 @@ export async function dashboardRoutes(app: FastifyInstance, db: Db, auth: AuthSe
     await ensureProjectAccess(db, claims.userId, projectId);
     const [sourceRows, indexRows, jobRows, scheduleRows] = await Promise.all([
       db.select().from(sources).where(eq(sources.projectId, projectId)).orderBy(desc(sources.updatedAt)),
-      db.select().from(indexes).where(eq(indexes.projectId, projectId)).orderBy(desc(indexes.updatedAt)),
+      db.select().from(indexes).where(and(eq(indexes.projectId, projectId), sql`${indexes.deletionRequestedAt} is null`)).orderBy(desc(indexes.updatedAt)),
       db.select().from(jobs).where(eq(jobs.projectId, projectId)).orderBy(desc(jobs.createdAt)).limit(25),
       db.select({ schedule: crawlSchedules }).from(crawlSchedules).innerJoin(sources, eq(sources.id, crawlSchedules.sourceId)).where(eq(sources.projectId, projectId))
     ]);

@@ -22,6 +22,8 @@ import { jobRoutes } from "./routes/jobs.js";
 import { managementRoutes } from "./routes/management.js";
 import { dashboardRoutes } from "./routes/dashboard.js";
 import { scheduleRoutes } from "./routes/schedules.js";
+import { deletionRoutes } from "./routes/deletion.js";
+import { JobCancelled } from "@searchforge/queue";
 import { explorerRoutes } from "./routes/explorer.js";
 
 export async function buildServer() {
@@ -115,6 +117,7 @@ export async function buildServer() {
   await dashboardRoutes(app, db, auth);
   await scheduleRoutes(app, db, auth);
   await explorerRoutes(app, db, auth, runtime);
+  await deletionRoutes(app, db, auth);
 
   app.setErrorHandler((error, request, reply) => {
     if (error instanceof ZodError) {
@@ -136,6 +139,10 @@ export async function buildServer() {
           ...(error.details !== undefined ? { details: error.details } : {})
         }
       });
+    }
+    const cause = (error instanceof Error ? error.cause : undefined) as { code?: string; message?: string } | undefined;
+    if (error instanceof JobCancelled || (cause?.code === "55000" && cause.message === "SearchForge index unavailable")) {
+      return reply.code(409).send({ error: { code: "INDEX_UNAVAILABLE", message: "Index is unavailable for writes", requestId: request.id } });
     }
     request.log.error({ err: error, requestId: request.id }, "request failed");
     return reply.code(500).send({

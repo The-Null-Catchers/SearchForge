@@ -47,6 +47,7 @@ export class IndexBuilder {
       .where(and(eq(indexes.id, indexId), eq(indexes.projectId, projectId)))
       .limit(1);
     if (!index) throw new Error("Index not found");
+    if (index.deletionRequestedAt) throw new JobCancelled();
     const [project] = await this.db.select().from(projects).where(eq(projects.id, projectId)).limit(1);
     if (!project) throw new Error("Project not found");
 
@@ -93,6 +94,9 @@ export class IndexBuilder {
       const manifestKey = await this.store.write(indexId, segment);
 
       await this.db.transaction(async (tx) => {
+        // Match deletion admission lock order: index first, then job.
+        const [current] = await tx.select().from(indexes).where(eq(indexes.id, indexId)).for("update");
+        if (!current || current.deletionRequestedAt) throw new JobCancelled();
         await tx.select().from(jobs).where(eq(jobs.id, databaseJobId)).for("update");
         await assertJobActive(tx, databaseJobId);
         if (index.activeVersionId) {

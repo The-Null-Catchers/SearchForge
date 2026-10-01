@@ -212,7 +212,7 @@ export async function managementRoutes(
   app.get("/v1/indexes/:indexId/versions", async (request) => {
     const claims = await auth.verifyAccess(bearer(request));
     const { indexId } = z.object({ indexId: z.string().uuid() }).parse(request.params);
-    const [index] = await db.select().from(indexes).where(eq(indexes.id, indexId)).limit(1);
+    const [index] = await db.select().from(indexes).where(and(eq(indexes.id, indexId), sql`${indexes.deletionRequestedAt} is null`)).limit(1);
     if (!index) throw new AppError("INDEX_NOT_FOUND", "Index not found", 404);
     await projectAccess(db, claims.userId, index.projectId, "viewer");
     const versions = await db.select().from(indexVersions)
@@ -224,7 +224,7 @@ export async function managementRoutes(
   app.post("/v1/indexes/:indexId/versions/:versionId/activate", async (request) => {
     const claims = await auth.verifyAccess(bearer(request));
     const params = z.object({ indexId: z.string().uuid(), versionId: z.string().uuid() }).parse(request.params);
-    const [index] = await db.select().from(indexes).where(eq(indexes.id, params.indexId)).limit(1);
+    const [index] = await db.select().from(indexes).where(and(eq(indexes.id, params.indexId), sql`${indexes.deletionRequestedAt} is null`)).limit(1);
     if (!index) throw new AppError("INDEX_NOT_FOUND", "Index not found", 404);
     const access = await projectAccess(db, claims.userId, index.projectId, "developer");
     const [target] = await db.select().from(indexVersions)
@@ -236,6 +236,8 @@ export async function managementRoutes(
 
     await db.transaction(async (tx) => {
       await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${params.indexId}, 0))`);
+      const [current] = await tx.select().from(indexes).where(eq(indexes.id, params.indexId)).for("update");
+      if (!current || current.deletionRequestedAt) throw new AppError("INDEX_NOT_FOUND", "Index not found", 404);
       await tx.update(indexVersions).set({ state: "retired", updatedAt: new Date() })
         .where(and(eq(indexVersions.indexId, params.indexId), eq(indexVersions.state, "active")));
       await tx.update(indexVersions).set({ state: "active", activatedAt: new Date(), updatedAt: new Date() })

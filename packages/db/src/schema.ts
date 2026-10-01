@@ -84,6 +84,7 @@ export const indexes = pgTable("indexes", {
   schema: jsonb("schema").notNull().$type<Record<string, unknown>>().default({}),
   settings: jsonb("settings").notNull().$type<Record<string, unknown>>().default({}),
   activeVersionId: uuid("active_version_id"),
+  deletionRequestedAt: timestamp("deletion_requested_at", { withTimezone: true }),
   ...timestamps
 }, (t) => ({
   projectSlugUnique: uniqueIndex("indexes_project_slug_uq").on(t.projectId, t.slug),
