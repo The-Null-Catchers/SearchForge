@@ -9,6 +9,10 @@ export class JobCancelled extends Error {
   constructor() { super("Job cancelled"); this.name = "JobCancelled"; }
 }
 
+export class SourceUnavailable extends JobCancelled {
+  constructor() { super(); this.name = "SourceUnavailable"; this.message = "Source is unavailable or disabled"; }
+}
+
 export async function assertJobActive(db: Db | JobTransaction, id: string) {
   const [job] = await db.select().from(jobs).where(eq(jobs.id, id)).limit(1);
   if (!job) throw new Error("Job not found");
@@ -38,7 +42,7 @@ export async function enqueueCrawl(tx: JobTransaction, projectId: string, source
   // All producers serialize on the source, preventing overlapping scheduled/manual runs.
   const [source] = await tx.select().from(sources)
     .where(and(eq(sources.id, sourceId), eq(sources.projectId, projectId))).for("update");
-  if (!source?.enabled) throw new Error("Source is unavailable or disabled");
+  if (!source?.enabled || source.deletionRequestedAt) throw new SourceUnavailable();
   const [existing] = await tx.select({ id: jobs.id }).from(jobs)
     .where(and(eq(jobs.sourceId, sourceId), eq(jobs.type, "crawl"), inArray(jobs.state, ["queued", "running"]))).limit(1);
   if (existing) return existing.id;
@@ -103,7 +107,7 @@ export class JobDispatcher {
         .orderBy(asc(crawlSchedules.nextRunAt)).limit(25).for("update", { skipLocked: true });
       for (const schedule of due) {
         const [source] = await tx.select().from(sources).where(eq(sources.id, schedule.sourceId)).limit(1);
-        if (source?.enabled) await enqueueCrawl(tx, source.projectId, source.id);
+        if (source?.enabled && !source.deletionRequestedAt) await enqueueCrawl(tx, source.projectId, source.id);
         // Coalesce missed runs after downtime instead of flooding the crawler.
         await tx.update(crawlSchedules).set({ nextRunAt: new Date(now.getTime() + schedule.intervalSeconds * 1000), updatedAt: now })
           .where(eq(crawlSchedules.sourceId, schedule.sourceId));

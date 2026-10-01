@@ -49,6 +49,7 @@ export async function documentRoutes(app: FastifyInstance, db: Db, keys: ApiKeyS
         set: {
           body: document,
           contentHash: hashDocument(document),
+          sourceId: null,
           deletedAt: null,
           updatedAt: new Date()
         }
@@ -77,6 +78,7 @@ export async function documentRoutes(app: FastifyInstance, db: Db, keys: ApiKeyS
         set: {
           body: sql`excluded.body`,
           contentHash: sql`excluded.content_hash`,
+          sourceId: null,
           deletedAt: null,
           updatedAt: new Date()
         }

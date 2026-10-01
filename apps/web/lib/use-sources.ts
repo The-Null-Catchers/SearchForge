@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { CrawlConfig } from "@searchforge/shared";
 import { api } from "./api";
 
-export type Source = { id: string; name: string; kind: string; config: CrawlConfig; lastCrawledAt?: string | null };
+export type Source = { id: string; name: string; kind: string; config: CrawlConfig; lastCrawledAt?: string | null; deletionRequestedAt?: string | null };
 export type Schedule = { sourceId: string; enabled: boolean; intervalSeconds: number; nextRunAt: string };
 export type CrawlJob = { id: string; sourceId: string | null; type: string; state: string; phase: string; createdAt: string;
   cancelRequestedAt: string | null; progress: Record<string, unknown> };
@@ -49,6 +49,7 @@ export function useSources(projectId: string | null) {
     add: (name: string, url: string) => mutate("add", `/v1/projects/${projectId}/sources`,
       { name, config: { startUrls: [url], maxDepth: 5, maxPages: 10000, respectRobots: true } }),
     update: (id: string, name: string, config: CrawlConfig) => mutate(id, `/v1/sources/${id}`, { name, config }, "PUT"),
+    remove: (id: string, confirmation: string) => mutate(id, `/v1/sources/${id}`, { confirmation }, "DELETE"),
     crawl: (id: string) => mutate(id, `/v1/sources/${id}/crawl`),
     cancel: (id: string) => mutate(id, `/v1/jobs/${id}/cancel`),
     schedule: (id: string, intervalSeconds: number, enabled: boolean) => mutate(id, `/v1/sources/${id}/schedule`, { intervalSeconds, enabled }, "PUT")

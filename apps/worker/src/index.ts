@@ -1,3 +1,4 @@
+import { SourceCleanup } from "./source-cleanup.js";
 import { IndexCleanup } from "./cleanup.js";
 import Fastify from "fastify";
 import { Worker } from "bullmq";
@@ -26,10 +27,11 @@ const failed = new Counter({ name: "searchforge_cleanup_jobs_failed_total", help
 const active = new Gauge({ name: "searchforge_cleanup_jobs_active", help: "Active cleanup jobs", registers: [metrics] });
 
 const cleanup = new IndexCleanup(db, storagePath);
+const sourceCleanup = new SourceCleanup(db, storagePath);
 const cleanupWorker = new Worker<CleanupJobData>("cleanup", async (job) => {
   active.inc();
   try {
-    const result = await cleanup.run(job.data);
+    const result = job.data.targetType === "source" ? await sourceCleanup.run(job.data) : await cleanup.run(job.data);
     completed.inc();
     return result;
   } catch (error) {
@@ -37,7 +39,7 @@ const cleanupWorker = new Worker<CleanupJobData>("cleanup", async (job) => {
     // Keep the durable receipt actionable even when automatic retries exhaust.
     await db.update(jobs).set({
       state: job.attemptsMade + 1 >= (job.opts.attempts ?? 1) ? "failed" : "queued",
-      phase: "cleanup_retry", errorCode: "CLEANUP_FAILED", errorMessage: "Index cleanup failed; retry deletion after resolving the worker error",
+      phase: "cleanup_retry", errorCode: "CLEANUP_FAILED", errorMessage: "Cleanup failed; retry deletion after resolving the worker error",
       updatedAt: new Date()
     }).where(eq(jobs.id, job.data.databaseJobId));
     throw error;

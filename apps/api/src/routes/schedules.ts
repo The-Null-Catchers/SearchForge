@@ -15,7 +15,7 @@ export async function scheduleRoutes(app: FastifyInstance, db: Db, auth: AuthSer
       z.literal(3600), z.literal(21600), z.literal(86400), z.literal(604800)
     ]) }).strict().parse(request.body);
     const [source] = await db.select().from(sources).where(eq(sources.id, sourceId)).limit(1);
-    if (!source || source.kind !== "website") throw new AppError("SOURCE_NOT_FOUND", "Website source not found", 404);
+    if (!source || source.deletionRequestedAt || source.kind !== "website") throw new AppError("SOURCE_NOT_FOUND", "Website source not found", 404);
     const access = await projectAccess(db, claims.userId, source.projectId, "developer");
     return db.transaction(async tx => {
       const nextRunAt = new Date(Date.now() + body.intervalSeconds * 1000);

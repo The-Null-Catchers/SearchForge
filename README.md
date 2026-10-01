@@ -117,3 +117,5 @@ Job delivery, scheduled recrawls and cancellation: [job lifecycle](docs/job-life
 Inspecting stored content and crawl results: [explorers](docs/explorers.md).
 
 Permanent index removal and retry semantics: [safe index deletion](docs/index-deletion.md).
+
+Source erasure and retained version fencing: [safe source deletion](docs/source-deletion.md).

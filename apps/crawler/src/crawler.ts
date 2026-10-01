@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { and, desc, eq, inArray, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import picomatch from "picomatch";
 import {
   crawlPages,
@@ -135,6 +135,14 @@ export class CrawlRunner {
   }
 
   async run(databaseJobId: string, sourceId: string, projectId: string) {
+    return this.db.transaction(async lock => {
+      // Fence retries and let source cleanup drain every running crawler process.
+      await lock.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`source:${sourceId}`}, 0))`);
+      return this.runLocked(databaseJobId, sourceId, projectId);
+    });
+  }
+
+  private async runLocked(databaseJobId: string, sourceId: string, projectId: string) {
     const initial = await assertJobActive(this.db, databaseJobId);
     if (initial.projectId !== projectId || initial.sourceId !== sourceId) throw new Error("Crawl job does not match source");
     if (initial.state === "completed") return { processed: Number(initial.progress.processed ?? 0),
@@ -143,14 +151,14 @@ export class CrawlRunner {
     const [source] = await this.db.select().from(sources)
       .where(and(eq(sources.id, sourceId), eq(sources.projectId, projectId)))
       .limit(1);
-    if (!source || !source.enabled || source.kind !== "website") throw new Error("Website source not found");
+    if (!source || source.deletionRequestedAt || !source.enabled || source.kind !== "website") throw new Error("Website source not found");
     const config = crawlConfigSchema.parse(source.config);
     if (config.allowedDomains.length === 0) {
       config.allowedDomains = [...new Set(config.startUrls.map((url) => new URL(url).hostname.toLowerCase()))];
     }
 
     const [targetIndex] = await this.db.select().from(indexes)
-      .where(and(eq(indexes.projectId, projectId), eq(indexes.slug, "docs")))
+      .where(and(eq(indexes.projectId, projectId), eq(indexes.slug, "docs"), isNull(indexes.deletionRequestedAt)))
       .limit(1);
     if (!targetIndex) throw new Error("Default docs index not found");
 
@@ -312,6 +320,7 @@ export class CrawlRunner {
                 target: [documents.indexId, documents.documentId],
                 set: {
                   body: document,
+                  sourceId,
                   contentHash: extracted.contentHash,
                   deletedAt: null,
                   updatedAt: new Date()
@@ -381,6 +390,10 @@ export class CrawlRunner {
 
 
     const result = await this.db.transaction(async tx => {
+      // Same lock order as source deletion: index, source, then job.
+      await tx.select().from(indexes).where(eq(indexes.id, targetIndex.id)).for("share");
+      const [currentSource] = await tx.select().from(sources).where(eq(sources.id, sourceId)).for("update");
+      if (!currentSource || currentSource.deletionRequestedAt) throw new JobCancelled();
       await tx.select().from(jobs).where(eq(jobs.id, databaseJobId)).for("update");
       await assertJobActive(tx, databaseJobId);
       const indexJobId = indexed === 0 && targetIndex.activeVersionId ? undefined
