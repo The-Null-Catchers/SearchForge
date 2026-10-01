@@ -75,7 +75,8 @@ Disabling analytics stops new records; it does not erase historical records.
 
 ## Remaining before MVP release
 
-- Per-page crawl retries.
+- Crawl retries are implemented for transient page fetch failures; durable per-page
+  deferred retries and operator retry/dead-letter controls remain follow-up work.
 - Cleanup lifecycle and outbox retention/recovery administration.
 - Compound AND/OR and date filters, query-bound cursors, normalized highlighting
   and efficient typo dictionaries for large vocabularies.

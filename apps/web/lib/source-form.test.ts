@@ -9,6 +9,15 @@ function fields() {
   return data;
 }
 describe("crawl form safety", () => {
+  it("validates retry limits and preserves defaults on older forms", () => {
+    const previous = crawlConfigSchema.parse({ startUrls: ["https://example.com"] });
+    expect(readCrawlForm(fields(), previous).retryMaxAttempts).toBe(3);
+    const updated = fields();
+    updated.set("retryMaxAttempts", "1"); updated.set("retryBaseDelayMs", "100"); updated.set("retryMaxDelayMs", "1000");
+    expect(readCrawlForm(updated, previous).retryMaxAttempts).toBe(1);
+    updated.set("retryMaxAttempts", "6");
+    expect(() => readCrawlForm(updated, previous)).toThrow();
+  });
   it("preserves zero depth and parses multiline rules", () => {
     const config = readCrawlForm(fields(), crawlConfigSchema.parse({ startUrls: ["https://example.com"] }));
     expect(config.maxDepth).toBe(0);

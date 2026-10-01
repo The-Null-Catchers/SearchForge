@@ -146,13 +146,29 @@ try {
   let rootConditional = 0;
   let childConditional = 0;
   let childVersion = 1;
+  let childTransient = 2;
+  let childAttempts = 0;
+  let retryWaitRequests = 0;
+  let retryWaitSeen;
   let holdRoot = false;
   let heldResponse;
   let rootSeen;
   site = createServer((req, res) => {
     if (req.url === '/robots.txt') { res.end('User-agent: *\nAllow: /'); return; }
     if (req.url === '/sitemap.xml') { res.writeHead(404); res.end(); return; }
+    if (req.url === '/retry-wait') {
+      retryWaitRequests++;
+      res.writeHead(429, { 'retry-after': '5', 'content-type': 'text/plain' });
+      res.end('busy'); retryWaitSeen?.(); return;
+    }
+    if (req.url === '/retry-exhausted') {
+      res.writeHead(503, { 'content-type': 'text/plain' }); res.end('unavailable'); return;
+    }
     const child = req.url === '/child';
+    if (child) {
+      childAttempts++;
+      if (childTransient-- > 0) { res.writeHead(503, { 'retry-after': '0' }); res.end(); return; }
+    }
     if (holdRoot && !child) { heldResponse = res; rootSeen(); return; }
     const etag = child ? `"child-${childVersion}"` : '"root-1"';
     if (req.headers['if-none-match']) { if (child) childConditional++; else rootConditional++; }
@@ -175,7 +191,12 @@ try {
     if (result.indexJobId) await waitJob(result.indexJobId, owner.accessToken);
     return result;
   }
-  assert.equal((await crawl()).indexed, 2);
+  const recoveredCrawl = await crawl();
+  assert.equal(recoveredCrawl.indexed, 2);
+  assert.equal(recoveredCrawl.processed, 2);
+  assert.equal(recoveredCrawl.failed, 0);
+  assert.equal(childAttempts, 3);
+  assert.equal((await pool.query("SELECT count(*) FROM crawl_pages WHERE source_id=$1 AND normalized_url LIKE '%/child'", [source.id])).rows[0].count, '1');
   childVersion = 2;
   const incremental = await crawl();
   assert.equal(rootConditional, 1);
@@ -184,6 +205,31 @@ try {
   const unchanged = await crawl();
   assert.equal(unchanged.indexed, 0);
   assert.equal(unchanged.indexJobId, undefined);
+
+  // Backoff cancellation must not issue another HTTP request or create an index job.
+  const retrySource = await request('POST', `/v1/projects/${project.id}/sources`, {
+    name: 'Retry wait', config: { startUrls: [`http://127.0.0.1:${site.address().port}/retry-wait`], maxPages: 1 }
+  }, owner.accessToken);
+  const retryJob = await request('POST', `/v1/sources/${retrySource.id}/crawl`, {}, owner.accessToken);
+  const waiting = new Promise(resolve => { retryWaitSeen = resolve; });
+  const runningRetry = runner.run(retryJob.jobId, retrySource.id, project.id);
+  const retryOutcome = assert.rejects(runningRetry, JobCancelled);
+  await waiting;
+  await request('POST', `/v1/jobs/${retryJob.jobId}/cancel`, {}, owner.accessToken);
+  await retryOutcome;
+  await finishCancelled(db, retryJob.jobId);
+  assert.equal(retryWaitRequests, 1);
+  assert.equal((await pool.query("SELECT count(*) FROM jobs WHERE source_id=$1 AND type='index'", [retrySource.id])).rows[0].count, '0');
+  const exhaustedSource = await request('POST', `/v1/projects/${project.id}/sources`, {
+    name: 'Exhausted retries', config: { startUrls: [`http://127.0.0.1:${site.address().port}/retry-exhausted`],
+      maxPages: 1, retryMaxAttempts: 2, retryBaseDelayMs: 100 }
+  }, owner.accessToken);
+  const exhaustedJob = await request('POST', `/v1/sources/${exhaustedSource.id}/crawl`, {}, owner.accessToken);
+  const exhausted = await runner.run(exhaustedJob.jobId, exhaustedSource.id, project.id);
+  assert.equal(exhausted.failed, 1);
+  assert.equal(exhausted.indexed, 0);
+  const failedPage = (await pool.query('SELECT status, http_status FROM crawl_pages WHERE job_id=$1', [exhaustedJob.jobId])).rows[0];
+  assert.deepEqual(failedPage, { status: 'failed', http_status: 503 });
 
 
 

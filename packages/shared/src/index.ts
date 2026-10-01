@@ -113,6 +113,9 @@ export const crawlConfigSchema = z.object({
   requestTimeoutMs: z.number().int().min(1000).max(120_000).default(15_000),
   concurrency: z.number().int().min(1).max(64).default(8),
   perDomainConcurrency: z.number().int().min(1).max(16).default(2),
+  retryMaxAttempts: z.number().int().min(1).max(5).default(3),
+  retryBaseDelayMs: z.number().int().min(100).max(10_000).default(500),
+  retryMaxDelayMs: z.number().int().min(100).max(30_000).default(30_000),
   respectRobots: z.literal(true).default(true),
   storeRawHtml: z.boolean().default(false)
 });

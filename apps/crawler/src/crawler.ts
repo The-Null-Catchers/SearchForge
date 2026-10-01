@@ -13,7 +13,8 @@ import { crawlConfigSchema, type CrawlConfig } from "@searchforge/shared";
 import { assertJobActive, enqueueIndex, JobCancelled } from "@searchforge/queue";
 import type { Redis as IORedis } from "ioredis";
 import { extractHtml, hammingDistance, simHash64 } from "./extract.js";
-import { safeFetch } from "./fetch.js";
+import { safeFetch, type SafeFetchResult } from "./fetch.js";
+import { retryPageFetch } from "./retry.js";
 import { RobotsPolicy } from "./robots.js";
 import { parseSitemap } from "./sitemap.js";
 import { normalizeUrl, sameAllowedDomain } from "./url.js";
@@ -207,6 +208,7 @@ export class CrawlRunner {
         await semaphore.run(async () => {
           await assertJobActive(this.db, databaseJobId);
           processed += 1;
+          let lastResponse: SafeFetchResult | undefined;
           try {
             const [previous] = await this.db.select().from(crawlPages)
               .where(and(eq(crawlPages.sourceId, sourceId), eq(crawlPages.normalizedUrl, normalized),
@@ -218,7 +220,7 @@ export class CrawlRunner {
             const headers: Record<string, string> = {};
             if (existing && previous?.etag) headers["if-none-match"] = previous.etag;
             if (existing && previous?.lastModified) headers["if-modified-since"] = previous.lastModified;
-            const response = await safeFetch(normalized, {
+            const response = await retryPageFetch(() => safeFetch(normalized, {
               userAgent: this.userAgent,
               timeoutMs: config.requestTimeoutMs,
               maxBytes: 5 * 1024 * 1024,
@@ -231,7 +233,13 @@ export class CrawlRunner {
                 if (!destinationPolicy.allows(destination, this.userAgent)) throw new Error("Redirect blocked by robots.txt");
                 await this.obeyDelay(destination, config, destinationPolicy);
               }
+            }), config, {
+              checkActive: () => assertJobActive(this.db, databaseJobId),
+              onRetry: (attempt, delayMs, status) => console.info(JSON.stringify({
+                event: "crawl.page_retry", jobId: databaseJobId, sourceId, url: normalized, attempt, delayMs, status
+              }))
             });
+            lastResponse = response;
             if (response.status === 304) {
               if (!previous || !existing || Object.keys(headers).length === 0) throw new Error("Unexpected 304 without a stored document");
               if (item.depth < config.maxDepth) {
@@ -251,6 +259,7 @@ export class CrawlRunner {
               return;
             }
             await assertJobActive(this.db, databaseJobId);
+            if (response.status < 200 || response.status >= 300) throw new Error(`HTTP ${response.status}`);
             const contentType = response.headers.get("content-type") ?? "";
             if (!contentType.includes("text/html") && !contentType.includes("application/xhtml+xml")) {
               await this.db.insert(crawlPages).values({
@@ -266,8 +275,6 @@ export class CrawlRunner {
               }).onConflictDoNothing();
               return;
             }
-
-            if (response.status < 200 || response.status >= 300) throw new Error(`HTTP ${response.status}`);
 
             const html = new TextDecoder().decode(response.body);
             const extracted = extractHtml(html, response.url);
@@ -351,6 +358,9 @@ export class CrawlRunner {
               normalizedUrl: normalized,
               depth: item.depth,
               status: "failed",
+              httpStatus: lastResponse?.status,
+              responseTimeMs: lastResponse ? Math.round(lastResponse.elapsedMs) : undefined,
+              contentType: lastResponse?.headers.get("content-type"),
               error: error instanceof Error ? error.message.slice(0, 2000) : "Unknown crawl error",
               crawledAt: new Date()
             }).onConflictDoNothing();

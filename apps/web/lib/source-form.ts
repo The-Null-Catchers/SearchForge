@@ -5,7 +5,10 @@ export function readCrawlForm(fields: FormData, previous: CrawlConfig) {
     exclude: lines(fields.get("exclude")), allowedDomains: lines(fields.get("allowedDomains")),
     maxDepth: Number(fields.get("maxDepth")), maxPages: Number(fields.get("maxPages")),
     concurrency: Number(fields.get("concurrency")), perDomainConcurrency: Number(fields.get("perDomainConcurrency")),
-    requestTimeoutMs: Number(fields.get("requestTimeoutMs")), respectRobots: true });
+    requestTimeoutMs: Number(fields.get("requestTimeoutMs")),
+    retryMaxAttempts: Number(fields.get("retryMaxAttempts") ?? previous.retryMaxAttempts ?? 3),
+    retryBaseDelayMs: Number(fields.get("retryBaseDelayMs") ?? previous.retryBaseDelayMs ?? 500),
+    retryMaxDelayMs: Number(fields.get("retryMaxDelayMs") ?? previous.retryMaxDelayMs ?? 30000), respectRobots: true });
 }
 export function safeExternalUrl(value: unknown): string | null {
   if (typeof value !== "string") return null;
