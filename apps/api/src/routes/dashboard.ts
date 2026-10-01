@@ -73,7 +73,7 @@ export async function dashboardRoutes(app: FastifyInstance, db: Db, auth: AuthSe
       .where(and(eq(searchEvents.projectId, projectId), eq(searchEvents.resultCount, 0)));
     const [activeJobs] = await db.select({ value: count() }).from(jobs)
       .where(and(eq(jobs.projectId, projectId), sql`${jobs.state} in ('queued','running')`));
-    const [sourceCount] = await db.select({ value: count() }).from(sources).where(eq(sources.projectId, projectId));
+    const [sourceCount] = await db.select({ value: count() }).from(sources).where(and(eq(sources.projectId, projectId), sql`${sources.deletionRequestedAt} is null`));
     const activeVersions = await db.select({
       indexId: indexes.id,
       indexName: indexes.name,

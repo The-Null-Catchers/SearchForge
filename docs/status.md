@@ -77,7 +77,7 @@ Disabling analytics stops new records; it does not erase historical records.
 
 - Crawl retries are implemented for transient page fetch failures; durable per-page
   deferred retries and operator retry/dead-letter controls remain follow-up work.
-- Cleanup lifecycle and outbox retention/recovery administration.
+- Project cleanup lifecycle and outbox retention/recovery administration.
 - Compound AND/OR and date filters, query-bound cursors, normalized highlighting
   and efficient typo dictionaries for large vocabularies.
 - Complete ranking/settings/logs workflows,
@@ -87,3 +87,7 @@ Disabling analytics stops new records; it does not erase historical records.
   load tests with actual measured results, VPS restore rehearsal.
 
 No performance numbers are claimed without a measured corpus and hardware profile.
+
+## Deletion lifecycle
+
+Confirmed, admin-only index deletion fences writes and drains builders before file/metadata erasure. Source deletion fences crawling, queues replacement builds, prevents rollback resurrection and purges obsolete segment files while preserving other documents. See [index deletion](index-deletion.md) and [source deletion](source-deletion.md). Project deletion remains pending. The current local suite passes 50 unit tests; PostgreSQL/Redis scenarios verify producer draining, storage failure/retry, delivery recovery and retained-segment inspection in CI.

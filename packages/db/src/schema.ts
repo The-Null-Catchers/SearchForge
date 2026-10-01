@@ -84,6 +84,7 @@ export const indexes = pgTable("indexes", {
   schema: jsonb("schema").notNull().$type<Record<string, unknown>>().default({}),
   settings: jsonb("settings").notNull().$type<Record<string, unknown>>().default({}),
   activeVersionId: uuid("active_version_id"),
+  minimumVersionSequence: integer("minimum_version_sequence").notNull().default(0),
   deletionRequestedAt: timestamp("deletion_requested_at", { withTimezone: true }),
   ...timestamps
 }, (t) => ({
@@ -115,6 +116,7 @@ export const sources = pgTable("sources", {
   config: jsonb("config").notNull().$type<Record<string, unknown>>(),
   enabled: boolean("enabled").notNull().default(true),
   lastCrawledAt: timestamp("last_crawled_at", { withTimezone: true }),
+  deletionRequestedAt: timestamp("deletion_requested_at", { withTimezone: true }),
   ...timestamps
 }, (t) => ({
   projectIndex: index("sources_project_idx").on(t.projectId)

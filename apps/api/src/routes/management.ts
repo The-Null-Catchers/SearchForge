@@ -54,11 +54,11 @@ export async function managementRoutes(
     const { sourceId } = z.object({ sourceId: z.string().uuid() }).parse(request.params);
     const body = z.object({ name: z.string().min(1).max(140), config: crawlConfigSchema }).strict().parse(request.body);
     const [source] = await db.select().from(sources).where(eq(sources.id, sourceId)).limit(1);
-    if (!source || source.kind !== "website") throw new AppError("SOURCE_NOT_FOUND", "Website source not found", 404);
+    if (!source || source.deletionRequestedAt || source.kind !== "website") throw new AppError("SOURCE_NOT_FOUND", "Website source not found", 404);
     const access = await projectAccess(db, claims.userId, source.projectId, "developer");
     return db.transaction(async tx => {
       const [current] = await tx.select().from(sources).where(eq(sources.id, sourceId)).for("update");
-      if (!current) throw new AppError("SOURCE_NOT_FOUND", "Website source not found", 404);
+      if (!current || current.deletionRequestedAt) throw new AppError("SOURCE_NOT_FOUND", "Website source not found", 404);
       const [updated] = await tx.update(sources).set({ name: body.name, config: body.config, updatedAt: new Date() })
         .where(eq(sources.id, sourceId)).returning();
       await tx.insert(auditLogs).values({ organizationId: access.organizationId, projectId: source.projectId,
@@ -99,7 +99,7 @@ export async function managementRoutes(
     const claims = await auth.verifyAccess(bearer(request));
     const { sourceId } = z.object({ sourceId: z.string().uuid() }).parse(request.params);
     const [source] = await db.select().from(sources).where(eq(sources.id, sourceId)).limit(1);
-    if (!source) throw new AppError("SOURCE_NOT_FOUND", "Source not found", 404);
+    if (!source || source.deletionRequestedAt) throw new AppError("SOURCE_NOT_FOUND", "Source not found", 404);
     await projectAccess(db, claims.userId, source.projectId, "developer");
 
     const databaseJobId = await db.transaction(tx => enqueueCrawl(tx, source.projectId, sourceId));
@@ -117,7 +117,7 @@ export async function managementRoutes(
       limit: z.coerce.number().int().min(1).max(200).default(50)
     }).parse(request.query);
     const [source] = await db.select().from(sources).where(eq(sources.id, sourceId)).limit(1);
-    if (!source) throw new AppError("SOURCE_NOT_FOUND", "Source not found", 404);
+    if (!source || source.deletionRequestedAt) throw new AppError("SOURCE_NOT_FOUND", "Source not found", 404);
     await projectAccess(db, claims.userId, source.projectId, "viewer");
     const scope = crawlCursorScope(sourceId, query.status, query.q, query.jobId);
     const cursor = query.cursor ? decodeCrawlCursor(query.cursor, scope) : null;
@@ -227,17 +227,15 @@ export async function managementRoutes(
     const [index] = await db.select().from(indexes).where(and(eq(indexes.id, params.indexId), sql`${indexes.deletionRequestedAt} is null`)).limit(1);
     if (!index) throw new AppError("INDEX_NOT_FOUND", "Index not found", 404);
     const access = await projectAccess(db, claims.userId, index.projectId, "developer");
-    const [target] = await db.select().from(indexVersions)
-      .where(and(eq(indexVersions.id, params.versionId), eq(indexVersions.indexId, params.indexId)))
-      .limit(1);
-    if (!target || !["ready", "retired", "active"].includes(target.state)) {
-      throw new AppError("VALIDATION_ERROR", "Version is not eligible for activation", 409);
-    }
-
-    await db.transaction(async (tx) => {
+    const sequence = await db.transaction(async (tx) => {
       await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${params.indexId}, 0))`);
       const [current] = await tx.select().from(indexes).where(eq(indexes.id, params.indexId)).for("update");
       if (!current || current.deletionRequestedAt) throw new AppError("INDEX_NOT_FOUND", "Index not found", 404);
+      const [target] = await tx.select().from(indexVersions)
+        .where(and(eq(indexVersions.id, params.versionId), eq(indexVersions.indexId, params.indexId))).limit(1);
+      if (!target || !["ready", "retired", "active"].includes(target.state) || target.sequence < current.minimumVersionSequence) {
+        throw new AppError("VALIDATION_ERROR", "Version is unavailable or predates a source deletion", 409);
+      }
       await tx.update(indexVersions).set({ state: "retired", updatedAt: new Date() })
         .where(and(eq(indexVersions.indexId, params.indexId), eq(indexVersions.state, "active")));
       await tx.update(indexVersions).set({ state: "active", activatedAt: new Date(), updatedAt: new Date() })
@@ -255,7 +253,8 @@ export async function managementRoutes(
         ip: request.ip,
         metadata: { sequence: target.sequence }
       });
+      return target.sequence;
     });
-    return { activeVersionId: params.versionId, sequence: target.sequence };
+    return { activeVersionId: params.versionId, sequence };
   });
 }

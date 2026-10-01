@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { createRequire } from 'node:module';
-import { access, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { access, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -17,6 +17,7 @@ const require = createRequire(new URL('../../packages/queue/package.json', impor
 const { Worker } = require('bullmq');
 const { buildServer } = await import('../../apps/api/dist/server.js');
 const { CrawlRunner } = await import('../../apps/crawler/dist/crawler.js');
+const { SourceCleanup, obsoleteSegmentFile } = await import('../../apps/worker/dist/source-cleanup.js');
 const { IndexCleanup } = await import('../../apps/worker/dist/cleanup.js');
 const { IndexBuilder } = await import('../../apps/indexer/dist/index-builder.js');
 const { createDatabase } = await import('../../packages/db/dist/index.js');
@@ -36,6 +37,7 @@ const app = await buildServer();
 let cleanupWorker;
 let deletionLock;
 let deletionDocumentLock;
+let releaseSourceBuild;
 let organizationId;
 let otherUserId;
 let viewerId;
@@ -489,7 +491,7 @@ try {
   deletionDocumentLock = await pool.connect();
   await deletionDocumentLock.query('BEGIN');
   await deletionDocumentLock.query('SELECT document_id FROM documents WHERE index_id=$1 AND document_id=$2 FOR UPDATE', [deleteIndexId, 'delete-me']);
-  cleanupWorker = new Worker('cleanup', job => cleanup.run(job.data), { connection: redis });
+  cleanupWorker = new Worker('cleanup', job => job.data.targetType === 'source' ? new SourceCleanup(db, storage, 15000).run(job.data) : cleanup.run(job.data), { connection: redis });
   cleanupWorker.on('error', error => console.error(error));
   await cleanupWorker.waitUntilReady();
   await new Promise(resolve => setTimeout(resolve, 100));
@@ -518,6 +520,129 @@ try {
   assert.equal((await pool.query("SELECT count(*) FROM audit_logs WHERE target_id=$1 AND action='index.deleted'", [deleteIndexId])).rows[0].count, '1');
   assert.ok((await search.search('javascript')).hits.length > 0, 'Unrelated index remains searchable');
 
+  // Source erasure preserves unrelated documents and drains old crawlers/builders.
+  await cleanupWorker.pause();
+  const removalProject = await request('POST', `/v1/organizations/${org.id}/projects`, { name: 'Removal', slug: 'removal' }, owner.accessToken);
+  const removalSource = await request('POST', `/v1/projects/${removalProject.id}/sources`, { name: 'Disposable site', config: source.config }, owner.accessToken);
+  const sourceOnly = await request('POST', `/v1/sources/${removalSource.id}/crawl`, {}, owner.accessToken);
+  const sourceResult = await runner.run(sourceOnly.jobId, removalSource.id, removalProject.id);
+  await waitJob(sourceResult.indexJobId, owner.accessToken);
+  const retainedSource = await request('POST', `/v1/projects/${removalProject.id}/sources`, {
+    name: 'Retained site', config: { ...source.config, startUrls: [`http://127.0.0.1:${site.address().port}/child`], maxPages: 1 }
+  }, owner.accessToken);
+  const retainedCrawl = await request('POST', `/v1/sources/${retainedSource.id}/crawl`, {}, owner.accessToken);
+  const retainedResult = await runner.run(retainedCrawl.jobId, retainedSource.id, removalProject.id);
+  await waitJob(retainedResult.indexJobId, owner.accessToken);
+  assert.equal((await pool.query("SELECT source_id FROM documents WHERE index_id=$1 AND body->>'title'='Quantum telescopes'", [removalProject.index.id])).rows[0].source_id, retainedSource.id);
+  await pool.query('INSERT INTO documents(index_id,document_id,source_id,body,content_hash) VALUES($1,$2,$3,$4,$5)',
+    [removalProject.index.id, 'claimed-push', removalSource.id, JSON.stringify({ id: 'claimed-push', title: 'Old source owned document' }), 'hash']);
+  const keptPush = await request('PUT', '/v1/indexes/docs/documents/claimed-push', { title: 'Manual owner', content: 'Retained content' }, removalProject.adminKey);
+  await waitJob(keptPush.jobId, owner.accessToken);
+  assert.equal((await pool.query('SELECT source_id FROM documents WHERE index_id=$1 AND document_id=$2', [removalProject.index.id, 'claimed-push'])).rows[0].source_id, null);
+  const removalSearch = new SearchForge({ projectId: removalProject.id, baseUrl: `http://127.0.0.1:${address.port}`, apiKey: removalProject.searchKey });
+  assert.ok((await removalSearch.search('compiler', { typoTolerance: false })).hits.length);
+  const historyBefore = (await request('GET', `/v1/indexes/${removalProject.index.id}/versions`, undefined, owner.accessToken)).versions;
+  for (const deniedToken of [viewer.accessToken, stranger.accessToken]) {
+    assert.equal((await app.inject({ method: 'DELETE', url: `/v1/sources/${removalSource.id}`, payload: { confirmation: removalSource.name },
+      headers: { authorization: `Bearer ${deniedToken}` } })).statusCode, 403);
+  }
+  assert.equal((await app.inject({ method: 'DELETE', url: `/v1/sources/${removalSource.id}`, payload: { confirmation: 'wrong name' }, headers: deleteHeaders })).statusCode, 400);
+  await request('PUT', `/v1/sources/${removalSource.id}/schedule`, { enabled: true, intervalSeconds: 3600 }, owner.accessToken);
+  // Pause one real crawler in HTTP and one real builder after file persistence.
+  holdRoot = true;
+  const rootArrived = new Promise(resolve => { rootSeen = resolve; });
+  const oldCrawl = await request('POST', `/v1/sources/${removalSource.id}/crawl`, {}, owner.accessToken);
+  const drainingCrawl = runner.run(oldCrawl.jobId, removalSource.id, removalProject.id);
+  const drainedAssertion = assert.rejects(drainingCrawl, error => error instanceof JobCancelled || error.cause?.code === '55000');
+  await rootArrived;
+  let releaseOldBuild;
+  let oldBuildPersisted;
+  const oldBuildGate = new Promise(resolve => { releaseOldBuild = resolve; releaseSourceBuild = resolve; });
+  const oldBuildSeen = new Promise(resolve => { oldBuildPersisted = resolve; });
+  builder.store.write = async (...args) => {
+    const key = await originalWrite(...args);
+    if (args[0] === removalProject.index.id) { oldBuildPersisted(); await oldBuildGate; }
+    return key;
+  };
+  const oldBuild = await request('POST', `/v1/console/indexes/${removalProject.index.id}/rebuild`, {}, owner.accessToken);
+  await oldBuildSeen;
+  const deletingSource = await request('DELETE', `/v1/sources/${removalSource.id}`, { confirmation: removalSource.name }, owner.accessToken);
+  assert.equal((await request('DELETE', `/v1/sources/${removalSource.id}`, { confirmation: removalSource.name }, owner.accessToken)).jobId, deletingSource.jobId);
+  assert.equal((await request('GET', `/v1/jobs/${oldCrawl.jobId}`, undefined, owner.accessToken)).state, 'cancelled');
+  assert.equal((await pool.query('SELECT enabled FROM crawl_schedules WHERE source_id=$1', [removalSource.id])).rows[0].enabled, false);
+  for (const [method, url, payload] of [
+    ['POST', `/v1/sources/${removalSource.id}/crawl`, {}],
+    ['PUT', `/v1/sources/${removalSource.id}`, { name: 'rename', config: source.config }],
+    ['PUT', `/v1/sources/${removalSource.id}/schedule`, { enabled: true, intervalSeconds: 3600 }],
+    ['GET', `/v1/sources/${removalSource.id}/pages`, undefined]
+  ]) assert.equal((await app.inject({ method, url, ...(payload ? { payload } : {}), headers: deleteHeaders })).statusCode, 404);
+  await assert.rejects(pool.query('INSERT INTO documents(index_id,document_id,source_id,body) VALUES($1,$2,$3,$4)',
+    [removalProject.index.id, 'late-source', removalSource.id, '{}']), error => error.code === '55000');
+  const sourceData = { databaseJobId: deletingSource.jobId, projectId: removalProject.id, targetType: 'source', targetId: removalSource.id };
+  const sourceStorageFailure = new SourceCleanup(db, blockedStorage, 15000).run(sourceData);
+  const sourceFailureAssertion = assert.rejects(sourceStorageFailure, /ENOTDIR/);
+  await new Promise(resolve => setTimeout(resolve, 100));
+  assert.equal((await request('GET', `/v1/jobs/${deletingSource.jobId}`, undefined, owner.accessToken)).phase, 'queued', 'Cleanup waits for the active crawler');
+  releaseOldBuild(); releaseSourceBuild = undefined; builder.store.write = originalWrite;
+  for (let i = 0; i < 150; i++) {
+    if ((await request('GET', `/v1/jobs/${oldBuild.jobId}`, undefined, owner.accessToken)).state === 'cancelled') break;
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  assert.equal((await request('GET', `/v1/jobs/${oldBuild.jobId}`, undefined, owner.accessToken)).state, 'cancelled', 'Old builder cannot publish past the deletion fence');
+  assert.equal((await app.inject({ method: 'POST', url: `/v1/indexes/${removalProject.index.id}/versions/${historyBefore[0].id}/activate`, headers: deleteHeaders })).statusCode, 409);
+  await worker.pause();
+  heldResponse.setHeader('content-type', 'text/html'); heldResponse.end('<main>Must not be indexed after source deletion</main>');
+  await drainedAssertion; holdRoot = false;
+  let sourceReceipt;
+  for (let i = 0; i < 100; i++) {
+    sourceReceipt = await request('GET', `/v1/jobs/${deletingSource.jobId}`, undefined, owner.accessToken);
+    if (sourceReceipt.phase === 'rebuilding') break;
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+  assert.equal(sourceReceipt.phase, 'rebuilding');
+  assert.equal((await pool.query('SELECT count(*) FROM documents WHERE source_id=$1', [removalSource.id])).rows[0].count, '0');
+  assert.ok((await removalSearch.search('compiler', { typoTolerance: false })).hits.length, 'Previous active version remains available until replacement activates');
+  assert.equal((await removalSearch.search('manual owner')).hits[0].id, 'claimed-push');
+  // A lost replacement task can be recovered from the committed cleanup plan.
+  const replacementId = sourceReceipt.progress.tasks[0].jobId;
+  await dispatcher.dispatch();
+  const replacementExternal = (await pool.query('SELECT external_job_id FROM jobs WHERE id=$1', [replacementId])).rows[0].external_job_id;
+  await (await queues.index.getJob(replacementExternal)).remove();
+  await pool.query("UPDATE job_outbox SET updated_at=now()-interval '1 minute' WHERE job_id=$1", [replacementId]);
+  assert.equal((await dispatcher.reconcile()).recovered, 1);
+  await worker.resume();
+  await sourceFailureAssertion;
+  assert.equal((await removalSearch.search('compiler', { typoTolerance: false })).total, 0);
+  assert.ok((await removalSearch.search('quantum')).hits.length, 'Other source remains searchable');
+  assert.equal((await removalSearch.search('manual owner')).hits[0].id, 'claimed-push');
+  assert.equal((await pool.query('SELECT count(*) FROM sources WHERE id=$1', [removalSource.id])).rows[0].count, '1', 'Storage failure retains deleting source and plan');
+  // Simulate exhausted worker retries; confirmed retry rotates Redis delivery
+  // while retaining child build receipts and avoiding duplicate rebuilds.
+  const beforeRetry = (await pool.query('SELECT external_job_id FROM jobs WHERE id=$1', [deletingSource.jobId])).rows[0].external_job_id;
+  await pool.query("UPDATE jobs SET state='failed' WHERE id=$1", [deletingSource.jobId]);
+  const retried = await request('DELETE', `/v1/sources/${removalSource.id}`, { confirmation: removalSource.name }, owner.accessToken);
+  assert.equal(retried.jobId, deletingSource.jobId);
+  assert.notEqual((await pool.query('SELECT external_job_id FROM jobs WHERE id=$1', [deletingSource.jobId])).rows[0].external_job_id, beforeRetry);
+  await cleanupWorker.resume();
+  await waitJob(deletingSource.jobId, owner.accessToken);
+  assert.equal((await new SourceCleanup(db, storage).run(sourceData)).cleaned, true);
+  for (const table of ['sources', 'crawl_pages', 'crawl_schedules', 'documents']) {
+    const column = table === 'sources' ? 'id' : 'source_id';
+    assert.equal((await pool.query(`SELECT count(*) FROM ${table} WHERE ${column}=$1`, [removalSource.id])).rows[0].count, '0');
+  }
+  const liveIndex = (await pool.query('SELECT minimum_version_sequence FROM indexes WHERE id=$1', [removalProject.index.id])).rows[0];
+  const surviving = await request('GET', `/v1/indexes/${removalProject.index.id}/versions`, undefined, owner.accessToken);
+  assert.ok(surviving.versions.every(version => version.sequence >= liveIndex.minimum_version_sequence));
+  for (const file of await readdir(join(storage, removalProject.index.id))) {
+    assert.equal(obsoleteSegmentFile(file, liveIndex.minimum_version_sequence), false);
+    if (file.endsWith('.segment.json')) {
+      const segment = JSON.parse(await readFile(join(storage, removalProject.index.id, file), 'utf8'));
+      assert.ok(Object.values(segment.documents).every(doc => doc.metadata?.sourceId !== removalSource.id));
+    }
+  }
+  assert.equal((await pool.query("SELECT count(*) FROM audit_logs WHERE target_id=$1 AND action='source.deleted'", [removalSource.id])).rows[0].count, '1');
+  assert.equal((await pool.query("SELECT count(*) FROM audit_logs WHERE target_id=$1 AND action='source.deletion_retried'", [removalSource.id])).rows[0].count, '1');
+
   // Concurrent refreshes serialize: one rotates; the reuse attempt revokes its family.
   const auth = new AuthService(db, config);
   const session = await auth.login(`owner-${suffix}@example.com`, 'integration-password-123');
@@ -525,8 +650,9 @@ try {
   assert.equal(races.filter(result => result.status === 'fulfilled').length, 1);
   const winner = races.find(result => result.status === 'fulfilled').value;
   await assert.rejects(auth.refresh(winner.refreshToken), /reuse detected/);
-  console.log('PASS: registration, tenants, async indexing, JS SDK, Arabic/English, typos, facets, autocomplete, clicks, rebuild, rollback, incremental crawl, durable schedules, explorers, source rules, cancellation, safe index deletion and refresh reuse');
+  console.log('PASS: registration, tenants, async indexing, JS SDK, Arabic/English, typos, facets, autocomplete, clicks, rebuild, rollback, incremental crawl, durable schedules, explorers, source rules, cancellation, safe index/source deletion and refresh reuse');
 } finally {
+  releaseSourceBuild?.();
   clearInterval(timer);
   await dispatching;
   if (site) { site.closeAllConnections(); await new Promise(resolve => site.close(resolve)); }

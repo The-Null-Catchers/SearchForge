@@ -1,10 +1,11 @@
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, or, sql } from "drizzle-orm";
 import {
   documents,
   indexVersions,
   indexes,
   jobs,
   projects,
+  sources,
   type createDatabase
 } from "@searchforge/db";
 import { buildSegment, FileSegmentStore, validateSegment, type SearchDocument } from "@searchforge/search-core";
@@ -56,7 +57,7 @@ export class IndexBuilder {
       .where(eq(indexVersions.indexId, indexId))
       .orderBy(desc(indexVersions.sequence))
       .limit(1);
-    const sequence = (latest?.sequence ?? 0) + 1;
+    const sequence = Math.max((latest?.sequence ?? 0) + 1, index.minimumVersionSequence);
 
     const [version] = await this.db.insert(indexVersions).values({
       indexId,
@@ -75,7 +76,8 @@ export class IndexBuilder {
 
     try {
       const rows = await this.db.select({ body: documents.body }).from(documents)
-        .where(and(eq(documents.indexId, indexId), isNull(documents.deletedAt)));
+        .where(and(eq(documents.indexId, indexId), isNull(documents.deletedAt),
+          or(isNull(documents.sourceId), sql`exists (select 1 from ${sources} where ${sources.id} = ${documents.sourceId} and ${sources.deletionRequestedAt} is null)`)));
       const settings = indexSettingsSchema.parse({
         ...(project.indexSettings ?? {}),
         ...(index.settings ?? {})
@@ -96,7 +98,7 @@ export class IndexBuilder {
       await this.db.transaction(async (tx) => {
         // Match deletion admission lock order: index first, then job.
         const [current] = await tx.select().from(indexes).where(eq(indexes.id, indexId)).for("update");
-        if (!current || current.deletionRequestedAt) throw new JobCancelled();
+        if (!current || current.deletionRequestedAt || sequence < current.minimumVersionSequence) throw new JobCancelled();
         await tx.select().from(jobs).where(eq(jobs.id, databaseJobId)).for("update");
         await assertJobActive(tx, databaseJobId);
         if (index.activeVersionId) {

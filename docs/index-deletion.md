@@ -28,7 +28,7 @@ The outbox dispatcher can recover a lost queued cleanup task after Redis deliver
 
 ## Limits and next steps
 
-- This release deletes indexes, not projects or sources. Those require their own producer fencing and source-content removal from every retained segment; unsupported queue targets now fail instead of claiming success.
+- Index deletion and [source deletion](source-deletion.md) are implemented. Project deletion remains separate work; unsupported project queue targets fail instead of claiming success.
 - Deleting the default `docs` index makes website crawling unavailable for that project until an index with that slug is provisioned. General index creation and configuration UI remains a separate roadmap item.
 - API process caches may retain inaccessible snapshots until eviction or process restart. Backups and retained Redis job payloads follow their existing retention policies; this endpoint is not a backup erasure API.
 - Clicks without an attributed search event cannot be reliably assigned to an index and remain in project analytics. Aggregate project usage counters remain unchanged.
