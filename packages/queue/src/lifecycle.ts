@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { and, asc, eq, inArray, isNull, isNotNull, lte } from "drizzle-orm";
-import { crawlSchedules, jobOutbox, jobs, sources, type createDatabase } from "@searchforge/db";
+import { crawlSchedules, jobOutbox, jobs, indexes, sources, type createDatabase } from "@searchforge/db";
 import type { Queue } from "bullmq";
 
 type Db = ReturnType<typeof createDatabase>["db"];
@@ -23,6 +23,9 @@ export async function finishCancelled(db: Db, id: string) {
 
 // The caller owns the transaction containing both product mutations and enqueue.
 export async function enqueueIndex(tx: JobTransaction, projectId: string, indexId: string, sourceId?: string) {
+  const [index] = await tx.select().from(indexes)
+    .where(and(eq(indexes.id, indexId), eq(indexes.projectId, projectId))).for("share");
+  if (!index || index.deletionRequestedAt) throw new JobCancelled();
   const id = randomUUID();
   const externalJobId = randomUUID();
   await tx.insert(jobs).values({ id, externalJobId, projectId, indexId, sourceId, type: "index" });

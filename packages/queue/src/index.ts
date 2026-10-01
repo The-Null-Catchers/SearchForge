@@ -28,7 +28,7 @@ export type IndexJobData = {
 };
 
 export type CleanupJobData = {
-  databaseJobId?: string;
+  databaseJobId: string;
   projectId: string;
   targetType: "project" | "source" | "index";
   targetId: string;

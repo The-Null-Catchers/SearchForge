@@ -1,8 +1,9 @@
-import { rm } from "node:fs/promises";
-import { join } from "node:path";
+import { IndexCleanup } from "./cleanup.js";
 import Fastify from "fastify";
 import { Worker } from "bullmq";
 import { Counter, Gauge, Registry, collectDefaultMetrics } from "prom-client";
+import { eq } from "drizzle-orm";
+import { jobs } from "@searchforge/db";
 import { createDatabase } from "@searchforge/db";
 import { createQueues, createRedisConnection, JobDispatcher, type CleanupJobData } from "@searchforge/queue";
 
@@ -24,16 +25,21 @@ const completed = new Counter({ name: "searchforge_cleanup_jobs_completed_total"
 const failed = new Counter({ name: "searchforge_cleanup_jobs_failed_total", help: "Failed cleanup jobs", registers: [metrics] });
 const active = new Gauge({ name: "searchforge_cleanup_jobs_active", help: "Active cleanup jobs", registers: [metrics] });
 
+const cleanup = new IndexCleanup(db, storagePath);
 const cleanupWorker = new Worker<CleanupJobData>("cleanup", async (job) => {
   active.inc();
   try {
-    if (job.data.targetType === "index") {
-      await rm(join(storagePath, job.data.targetId), { recursive: true, force: true });
-    }
+    const result = await cleanup.run(job.data);
     completed.inc();
-    return { cleaned: true, targetType: job.data.targetType, targetId: job.data.targetId };
+    return result;
   } catch (error) {
     failed.inc();
+    // Keep the durable receipt actionable even when automatic retries exhaust.
+    await db.update(jobs).set({
+      state: job.attemptsMade + 1 >= (job.opts.attempts ?? 1) ? "failed" : "queued",
+      phase: "cleanup_retry", errorCode: "CLEANUP_FAILED", errorMessage: "Index cleanup failed; retry deletion after resolving the worker error",
+      updatedAt: new Date()
+    }).where(eq(jobs.id, job.data.databaseJobId));
     throw error;
   } finally {
     active.dec();
@@ -44,6 +50,8 @@ const cleanupWorker = new Worker<CleanupJobData>("cleanup", async (job) => {
 });
 
 const server = Fastify({ logger: true });
+cleanupWorker.on("error", error => server.log.error({ err: error }, "Cleanup worker error"));
+cleanupWorker.on("failed", (job, error) => server.log.error({ err: error, jobId: job?.id }, "Cleanup attempt failed"));
 server.get("/health/live", async () => ({ status: "live" }));
 server.get("/health/ready", async (_request, reply) => {
   try {

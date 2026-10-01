@@ -38,7 +38,7 @@ export function useIndexExplorer(projectId: string | null) {
   useEffect(() => {
     const controller = new AbortController();
     setDetail(null); setPage({ documents: [], nextAfter: null });
-    if (!indexId) { setVersions([]); return; }
+    if (!indexId) { setVersions([]); setLoading(false); return; }
     setLoading(true);
     const params = new URLSearchParams({ q, status, limit: "30", ...(after ? { after } : {}) });
     void Promise.all([
@@ -75,6 +75,22 @@ export function useIndexExplorer(projectId: string | null) {
     } catch (err) { if (scope === activeScope.current) setError(err instanceof Error ? err.message : "Operation failed"); return false; }
     finally { if (scope === activeScope.current) setBusy(false); }
   };
+  const deleteIndex = async (confirmation: string) => {
+    const scope = activeScope.current;
+    const removedId = indexId;
+    setBusy(true); setError("");
+    try {
+      const result = await api<{ jobId: string }>(`/v1/console/indexes/${removedId}`, {
+        method: "DELETE", body: JSON.stringify({ confirmation })
+      });
+      if (scope !== activeScope.current) return;
+      const remaining = indexes.filter(index => index.id !== removedId);
+      setIndexes(remaining); setIndexId(remaining[0]?.id ?? ""); setDetail(null); setAfter("");
+      setJob({ id: result.jobId, state: "queued", phase: "cleanup", progress: {} });
+      setRevision(value => value + 1);
+    } catch (err) { if (scope === activeScope.current) setError(err instanceof Error ? err.message : "Deletion failed"); }
+    finally { if (scope === activeScope.current) setBusy(false); }
+  };
   const inspect = useCallback(async (documentId: string) => {
     const scope = activeScope.current;
     const sequence = ++inspection.current;
@@ -91,6 +107,7 @@ export function useIndexExplorer(projectId: string | null) {
     next: () => setAfter(page.nextAfter ?? ""), first: () => setAfter(""), inspect,
     rebuild: () => run(`/v1/console/indexes/${indexId}/rebuild`, "POST", true),
     remove: (id: string) => run(`/v1/console/indexes/${indexId}/documents/${encodeURIComponent(id)}`, "DELETE", true),
+    deleteIndex,
     activate: (id: string) => run(`/v1/indexes/${indexId}/versions/${id}/activate`, "POST", false)
   };
 }

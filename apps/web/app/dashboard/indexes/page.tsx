@@ -8,6 +8,7 @@ export default function IndexesPage() {
   const { projectId, projects } = useProject();
   const ex = useIndexExplorer(projectId);
   const canEdit = ["owner", "admin", "developer"].includes(projects.find(project => project.id === projectId)?.role ?? "");
+  const canDelete = ["owner", "admin"].includes(projects.find(project => project.id === projectId)?.role ?? "");
   const pending = !!ex.job && ["queued", "running"].includes(ex.job.state);
   const filter = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault(); const values = new FormData(event.currentTarget);
@@ -23,6 +24,12 @@ export default function IndexesPage() {
         {!ex.indexes.length && <option value="">No indexes</option>}{ex.indexes.map(index => <option key={index.id} value={index.id}>{index.name} · {index.slug}</option>)}
       </select></label>
       {canEdit && <button className="btn primary" disabled={!ex.indexId || ex.busy || pending} onClick={() => void ex.rebuild()}>Rebuild index</button>}
+      {canDelete && <button className="btn" disabled={!ex.indexId || ex.busy} onClick={() => {
+        const selected = ex.indexes.find(index => index.id === ex.indexId);
+        if (!selected) return;
+        const confirmation = window.prompt(`Permanently delete ${selected.name}, all documents and every index version? Search stops immediately. Type ${selected.slug} to confirm.`);
+        if (confirmation === selected.slug) void ex.deleteIndex(confirmation);
+      }}>Delete index</button>}
       {ex.job && <span role="status" className="badge">{ex.job.state} · {ex.job.phase}</span>}
     </div>
     {ex.indexId && <section className="card" style={{ marginTop: 14 }}><div className="card-head"><h2>Index versions</h2></div>

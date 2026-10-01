@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { createRequire } from 'node:module';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { access, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -17,6 +17,7 @@ const require = createRequire(new URL('../../packages/queue/package.json', impor
 const { Worker } = require('bullmq');
 const { buildServer } = await import('../../apps/api/dist/server.js');
 const { CrawlRunner } = await import('../../apps/crawler/dist/crawler.js');
+const { IndexCleanup } = await import('../../apps/worker/dist/cleanup.js');
 const { IndexBuilder } = await import('../../apps/indexer/dist/index-builder.js');
 const { createDatabase } = await import('../../packages/db/dist/index.js');
 const { createRedisConnection, JobDispatcher, JobCancelled, finishCancelled } = await import('../../packages/queue/dist/index.js');
@@ -32,6 +33,8 @@ const worker = new Worker('index', async job => {
 }, { connection: redis, concurrency: 2 });
 worker.on('error', error => console.error(error));
 const app = await buildServer();
+let cleanupWorker;
+let deletionLock;
 let organizationId;
 let otherUserId;
 let viewerId;
@@ -419,6 +422,91 @@ try {
   const finishedCancel = await app.inject({ method: 'POST', url: `/v1/jobs/${batch.jobId}/cancel`, headers: { authorization: `Bearer ${owner.accessToken}` } });
   assert.equal(finishedCancel.statusCode, 409);
 
+  // Index deletion fences producers, drains builders, and keeps a durable receipt.
+  const deleteIndexId = foreignProject.index.id;
+  const deletePath = `/v1/console/indexes/${deleteIndexId}`;
+  const deleteHeaders = { authorization: `Bearer ${owner.accessToken}` };
+  const foreignBatch = await request('POST', '/v1/indexes/docs/documents/batch', {
+    documents: [{ id: 'delete-me', title: 'Disposable search corpus' }]
+  }, foreignProject.adminKey);
+  await waitJob(foreignBatch.jobId, owner.accessToken);
+  await worker.pause();
+  const buildToDelete = await request("POST", `${deletePath}/rebuild`, {}, owner.accessToken);
+  for (const token of [viewer.accessToken, stranger.accessToken, foreignProject.adminKey]) {
+    const denied = await app.inject({ method: 'DELETE', url: deletePath, payload: { confirmation: 'docs' },
+      headers: { authorization: `Bearer ${token}` } });
+    assert.ok([401, 403].includes(denied.statusCode));
+  }
+  const wrong = await app.inject({ method: 'DELETE', url: deletePath, payload: { confirmation: 'wrong' }, headers: deleteHeaders });
+  assert.equal(wrong.statusCode, 400);
+  assert.equal((await pool.query('SELECT deletion_requested_at FROM indexes WHERE id=$1', [deleteIndexId])).rows[0].deletion_requested_at, null);
+
+  // Hold the same advisory lock as an in-flight builder. An admitted producer
+  // holding SHARE finishes first; deletion then rejects all later producers.
+  deletionLock = await pool.connect();
+  await deletionLock.query('BEGIN');
+  await deletionLock.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [deleteIndexId]);
+  await deletionLock.query('INSERT INTO documents(index_id,document_id,body,content_hash) VALUES($1,$2,$3,$4)',
+    [deleteIndexId, 'admitted-before-delete', JSON.stringify({ id: 'admitted-before-delete' }), 'hash']);
+  let admitted = false;
+  const admission = request('DELETE', deletePath, { confirmation: 'docs' }, owner.accessToken).then(value => { admitted = true; return value; });
+  await new Promise(resolve => setTimeout(resolve, 100));
+  assert.equal(admitted, false);
+  // Release only the SHARE row lock while retaining the builder lock in a new
+  // transaction, so cleanup must still wait after admission succeeds.
+  await deletionLock.query('COMMIT');
+  await deletionLock.query('BEGIN');
+  await deletionLock.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [deleteIndexId]);
+  const deletion = await admission;
+  const repeated = await request('DELETE', deletePath, { confirmation: 'docs' }, owner.accessToken);
+  assert.equal(repeated.jobId, deletion.jobId);
+  const resourcesAfterDelete = await request('GET', `/v1/projects/${foreignProject.id}/resources`, undefined, owner.accessToken);
+  assert.ok(!resourcesAfterDelete.indexes.some(index => index.id === deleteIndexId));
+  for (const url of [`/v1/indexes/${deleteIndexId}/versions`, `${deletePath}/documents`]) {
+    assert.equal((await app.inject({ method: 'GET', url, headers: deleteHeaders })).statusCode, 404);
+  }
+  assert.equal((await app.inject({ method: 'POST', url: '/v1/indexes/docs/search', payload: { query: 'search' },
+    headers: { authorization: `Bearer ${foreignProject.searchKey}` } })).statusCode, 404);
+  assert.equal((await app.inject({ method: 'POST', url: `/v1/jobs/${deletion.jobId}/cancel`, headers: deleteHeaders })).statusCode, 409);
+  await assert.rejects(pool.query('INSERT INTO documents(index_id,document_id,body,content_hash) VALUES($1,$2,$3,$4)',
+    [deleteIndexId, 'late-write', '{}', 'hash']), error => error.code === '55000');
+  const cleanupData = { databaseJobId: deletion.jobId, projectId: foreignProject.id, targetType: 'index', targetId: deleteIndexId };
+  const cleanup = new IndexCleanup(db, storage);
+  await assert.rejects(cleanup.run({ ...cleanupData, targetType: 'project' }), /Unsupported/);
+  // Queue a build before deletion in a separate job would be cancelled; the
+  // completed receipt is retained, and no replay may rebuild the removed index.
+  assert.equal((await request('GET', `/v1/jobs/${buildToDelete.jobId}`, undefined, owner.accessToken)).state, 'cancelled');
+  await deletionLock.query('COMMIT');
+  const blockedStorage = join(storage, 'not-a-directory');
+  await writeFile(blockedStorage, '{}');
+  await assert.rejects(new IndexCleanup(db, blockedStorage).run(cleanupData));
+  assert.equal((await pool.query('SELECT count(*) FROM indexes WHERE id=$1', [deleteIndexId])).rows[0].count, '1');
+  await access(join(storage, deleteIndexId));
+  await assert.rejects(cleanup.run({ ...cleanupData, projectId: project.id }), /match target/);
+  await deletionLock.query('BEGIN');
+  await deletionLock.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [deleteIndexId]);
+  cleanupWorker = new Worker('cleanup', job => cleanup.run(job.data), { connection: redis });
+  cleanupWorker.on('error', error => console.error(error));
+  await cleanupWorker.waitUntilReady();
+  await new Promise(resolve => setTimeout(resolve, 100));
+  await access(join(storage, deleteIndexId));
+  assert.equal((await request('GET', `/v1/jobs/${deletion.jobId}`, undefined, owner.accessToken)).state, 'queued');
+  // Even a late immutable file from the old builder is collected after it exits.
+  await writeFile(join(storage, deleteIndexId, 'late-segment.json'), '{}');
+  await deletionLock.query('COMMIT');
+  deletionLock.release(); deletionLock = undefined;
+  await waitJob(deletion.jobId, owner.accessToken);
+  await assert.rejects(builder.build(buildToDelete.jobId, foreignProject.id, deleteIndexId), /cancelled|not found/i);
+  await worker.resume();
+  assert.equal((await cleanup.run(cleanupData)).cleaned, true);
+  await assert.rejects(access(join(storage, deleteIndexId)));
+  for (const table of ['indexes', 'documents', 'index_versions', 'search_events']) {
+    const column = table === 'indexes' ? 'id' : 'index_id';
+    assert.equal((await pool.query(`SELECT count(*) FROM ${table} WHERE ${column}=$1`, [deleteIndexId])).rows[0].count, '0');
+  }
+  assert.equal((await pool.query("SELECT count(*) FROM audit_logs WHERE target_id=$1 AND action='index.deleted'", [deleteIndexId])).rows[0].count, '1');
+  assert.ok((await search.search('javascript')).hits.length > 0, 'Unrelated index remains searchable');
+
   // Concurrent refreshes serialize: one rotates; the reuse attempt revokes its family.
   const auth = new AuthService(db, config);
   const session = await auth.login(`owner-${suffix}@example.com`, 'integration-password-123');
@@ -426,11 +514,13 @@ try {
   assert.equal(races.filter(result => result.status === 'fulfilled').length, 1);
   const winner = races.find(result => result.status === 'fulfilled').value;
   await assert.rejects(auth.refresh(winner.refreshToken), /reuse detected/);
-  console.log('PASS: registration, tenants, async indexing, JS SDK, Arabic/English, typos, facets, autocomplete, clicks, rebuild, rollback, incremental crawl, durable schedules, explorers, source rules, cancellation and refresh reuse');
+  console.log('PASS: registration, tenants, async indexing, JS SDK, Arabic/English, typos, facets, autocomplete, clicks, rebuild, rollback, incremental crawl, durable schedules, explorers, source rules, cancellation, safe index deletion and refresh reuse');
 } finally {
   clearInterval(timer);
   await dispatching;
   if (site) { site.closeAllConnections(); await new Promise(resolve => site.close(resolve)); }
+  if (deletionLock) { await deletionLock.query("ROLLBACK"); deletionLock.release(); }
+  await cleanupWorker?.close();
   await worker.close();
   await Promise.all(Object.values(queues).map(queue => queue.close()));
   await app.close();

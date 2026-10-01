@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { indexVersions, indexes, projects, searchClicks, searchEvents, synonymSets, type createDatabase } from "@searchforge/db";
 import { AppError, searchRequestSchema } from "@searchforge/shared";
 import { z } from "zod";
@@ -17,7 +17,7 @@ function apiToken(request: FastifyRequest): string {
 
 async function resolveIndex(db: Db, projectId: string, slug: string) {
   const [index] = await db.select().from(indexes)
-    .where(and(eq(indexes.projectId, projectId), eq(indexes.slug, slug)))
+    .where(and(eq(indexes.projectId, projectId), eq(indexes.slug, slug), sql`${indexes.deletionRequestedAt} is null`))
     .limit(1);
   if (!index) throw new AppError("INDEX_NOT_FOUND", "The requested index does not exist", 404);
   if (!index.activeVersionId) throw new AppError("INDEX_NOT_FOUND", "The index does not have an active version yet", 409);

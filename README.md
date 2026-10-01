@@ -115,3 +115,5 @@ See [SDK usage](docs/sdk.md), [demo and benchmarks](docs/benchmarking.md) and
 Job delivery, scheduled recrawls and cancellation: [job lifecycle](docs/job-lifecycle.md).
 
 Inspecting stored content and crawl results: [explorers](docs/explorers.md).
+
+Permanent index removal and retry semantics: [safe index deletion](docs/index-deletion.md).

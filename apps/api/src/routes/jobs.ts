@@ -22,6 +22,7 @@ export async function jobRoutes(app: FastifyInstance, db: Db, redis: IORedis, au
     const result = await db.transaction(async tx => {
       const [job] = await tx.select().from(jobs).where(eq(jobs.id, jobId)).for("update");
       if (!job) throw new AppError("JOB_NOT_FOUND", "Job not found", 404);
+      if (job.type === "cleanup") throw new AppError("JOB_NOT_CANCELLABLE", "Deletion cleanup must finish once accepted", 409);
       if (job.state === "cancelled" || job.cancelRequestedAt) return job;
       if (!["queued", "running"].includes(job.state)) throw new AppError("JOB_FINISHED", "Finished jobs cannot be cancelled", 409);
       const now = new Date();
