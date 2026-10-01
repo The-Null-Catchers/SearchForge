@@ -488,7 +488,7 @@ try {
   await deletionLock.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [deleteIndexId]);
   deletionDocumentLock = await pool.connect();
   await deletionDocumentLock.query('BEGIN');
-  await deletionDocumentLock.query('SELECT id FROM documents WHERE index_id=$1 AND document_id=$2 FOR UPDATE', [deleteIndexId, 'delete-me']);
+  await deletionDocumentLock.query('SELECT document_id FROM documents WHERE index_id=$1 AND document_id=$2 FOR UPDATE', [deleteIndexId, 'delete-me']);
   cleanupWorker = new Worker('cleanup', job => cleanup.run(job.data), { connection: redis });
   cleanupWorker.on('error', error => console.error(error));
   await cleanupWorker.waitUntilReady();
