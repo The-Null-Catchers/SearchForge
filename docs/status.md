@@ -63,6 +63,16 @@ See docs/job-lifecycle.md for delivery semantics and cancellation boundaries.
 See docs/explorers.md. Integration/container CI verifies the expanded workflow.
 Browser E2E remains separate release work.
 
+## Analytics correctness
+
+Search and click consistency: search and click recording now respect `analyticsEnabled`.
+Clicks referencing search events must belong to the authenticated project and
+match the event query. Search/explain share enabled synonyms; explain ignores
+pagination so it can inspect a matching document outside the requested page.
+The analytics dashboard exposes loading/errors/retry and rejects stale responses
+after project changes. Regression coverage is in the PostgreSQL integration suite.
+Disabling analytics stops new records; it does not erase historical records.
+
 ## Remaining before MVP release
 
 - Per-page crawl retries.

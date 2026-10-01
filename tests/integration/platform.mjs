@@ -87,6 +87,43 @@ try {
   assert.equal(result.facets['metadata.category'].docs, 1);
   assert.ok((await search.autocomplete('java')).suggestions.length > 0);
   await search.trackClick({ query: result.query, documentId: result.hits[0].id, position: 1, searchEventId: result.searchEventId });
+  const click = { query: result.query, documentId: 'js', position: 1, searchEventId: result.searchEventId };
+  const foreignProject = await request('POST', `/v1/organizations/${org.id}/projects`, { name: 'Other corpus', slug: 'other-corpus' }, owner.accessToken);
+  const foreignEvent = (await pool.query('INSERT INTO search_events(project_id, index_id, query, result_count, latency_ms) VALUES ($1,$2,$3,1,1) RETURNING id', [foreignProject.id, foreignProject.index.id, result.query])).rows[0].id;
+  async function clickRequest(payload) {
+    return app.inject({ method: 'POST', url: '/v1/analytics/click', payload,
+      headers: { authorization: `Bearer ${project.searchKey}` } });
+  }
+  const initialClicks = (await pool.query('SELECT count(*) FROM search_clicks WHERE project_id=$1', [project.id])).rows[0].count;
+  for (const eventId of [foreignEvent, randomUUID()]) {
+    const denied = await clickRequest({ ...click, searchEventId: eventId });
+    assert.equal(denied.statusCode, 404);
+    assert.equal(denied.json().error.message, 'Search event not found');
+  }
+  assert.equal((await clickRequest({ ...click, query: 'different query' })).statusCode, 400);
+  assert.equal((await pool.query('SELECT count(*) FROM search_clicks WHERE project_id=$1', [project.id])).rows[0].count, initialClicks);
+  await pool.query('UPDATE projects SET analytics_enabled=false WHERE id=$1', [project.id]);
+  const eventCount = (await pool.query('SELECT count(*) FROM search_events WHERE project_id=$1', [project.id])).rows[0].count;
+  const privateResult = await search.search('javascript');
+  assert.equal(privateResult.hits[0].id, 'js');
+  assert.equal(privateResult.searchEventId, undefined);
+  assert.equal((await pool.query('SELECT count(*) FROM search_events WHERE project_id=$1', [project.id])).rows[0].count, eventCount);
+  assert.equal((await clickRequest(click)).json().stored, false);
+  assert.equal((await clickRequest({ query: 'javascript', documentId: 'js', position: 1 })).json().stored, false);
+  assert.equal((await pool.query('SELECT count(*) FROM search_clicks WHERE project_id=$1', [project.id])).rows[0].count, initialClicks);
+  await pool.query('UPDATE projects SET analytics_enabled=true WHERE id=$1', [project.id]);
+  assert.ok((await search.search('javascript')).searchEventId);
+  assert.equal((await clickRequest(click)).json().stored, true);
+  const synonym = await request('POST', `/v1/projects/${project.id}/synonyms`, { name: 'Explain consistency', terms: ['sfalias', 'javascript'], oneWay: true }, owner.accessToken);
+  const expanded = await sdk.search('sfalias', { debug: true, typoTolerance: false });
+  const explained = await app.inject({ method: 'POST', url: '/v1/indexes/docs/explain/js',
+    headers: { authorization: `Bearer ${project.adminKey}` },
+    payload: { query: 'sfalias', typoTolerance: false, offset: 9999,
+      cursor: Buffer.from(JSON.stringify({ version: expanded.indexVersion, offset: 9999 })).toString('base64url') } });
+  assert.equal(explained.statusCode, 200);
+  assert.ok(Object.keys(explained.json().components).length > 0);
+  assert.deepEqual(explained.json().components, expanded.hits.find(hit => hit.id === 'js').explanation);
+  await pool.query('DELETE FROM synonym_sets WHERE id=$1', [synonym.id]);
   await assert.rejects(search.upsertDocument({ id: 'forbidden' }), error => error.status === 403);
 
   // Guessing another tenant's UUID must not disclose its job or open a Redis stream.
