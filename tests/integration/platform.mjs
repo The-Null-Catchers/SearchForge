@@ -35,6 +35,7 @@ worker.on('error', error => console.error(error));
 const app = await buildServer();
 let cleanupWorker;
 let deletionLock;
+let deletionDocumentLock;
 let organizationId;
 let otherUserId;
 let viewerId;
@@ -485,6 +486,9 @@ try {
   await assert.rejects(cleanup.run({ ...cleanupData, projectId: project.id }), /match target/);
   await deletionLock.query('BEGIN');
   await deletionLock.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [deleteIndexId]);
+  deletionDocumentLock = await pool.connect();
+  await deletionDocumentLock.query('BEGIN');
+  await deletionDocumentLock.query('SELECT id FROM documents WHERE index_id=$1 AND document_id=$2 FOR UPDATE', [deleteIndexId, 'delete-me']);
   cleanupWorker = new Worker('cleanup', job => cleanup.run(job.data), { connection: redis });
   cleanupWorker.on('error', error => console.error(error));
   await cleanupWorker.waitUntilReady();
@@ -495,6 +499,13 @@ try {
   await writeFile(join(storage, deleteIndexId, 'late-segment.json'), '{}');
   await deletionLock.query('COMMIT');
   deletionLock.release(); deletionLock = undefined;
+  await new Promise(resolve => setTimeout(resolve, 100));
+  // An updater that already holds a document row must fail against the marker,
+  // not deadlock with a parent-first cascading DELETE in cleanup.
+  await assert.rejects(deletionDocumentLock.query('UPDATE documents SET body=$1 WHERE index_id=$2 AND document_id=$3',
+    ['{}', deleteIndexId, 'delete-me']), error => error.code === '55000');
+  await deletionDocumentLock.query('ROLLBACK');
+  deletionDocumentLock.release(); deletionDocumentLock = undefined;
   await waitJob(deletion.jobId, owner.accessToken);
   await assert.rejects(builder.build(buildToDelete.jobId, foreignProject.id, deleteIndexId), /cancelled|not found/i);
   await worker.resume();
@@ -519,6 +530,7 @@ try {
   clearInterval(timer);
   await dispatching;
   if (site) { site.closeAllConnections(); await new Promise(resolve => site.close(resolve)); }
+  if (deletionDocumentLock) { await deletionDocumentLock.query("ROLLBACK"); deletionDocumentLock.release(); }
   if (deletionLock) { await deletionLock.query("ROLLBACK"); deletionLock.release(); }
   await cleanupWorker?.close();
   await worker.close();
