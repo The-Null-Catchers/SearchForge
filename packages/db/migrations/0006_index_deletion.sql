@@ -22,3 +22,6 @@ CREATE TRIGGER versions_live_index BEFORE INSERT ON index_versions
   FOR EACH ROW EXECUTE FUNCTION searchforge_live_index_write();
 CREATE TRIGGER jobs_live_index BEFORE INSERT ON jobs
   FOR EACH ROW EXECUTE FUNCTION searchforge_live_index_write();
+
+ALTER TABLE job_outbox DROP CONSTRAINT job_outbox_queue_check;
+ALTER TABLE job_outbox ADD CONSTRAINT job_outbox_queue_check CHECK (queue IN ('crawl', 'index', 'cleanup'));
