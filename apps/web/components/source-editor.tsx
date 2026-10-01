@@ -24,8 +24,12 @@ export function SourceEditor({ source, disabled, save }: { source: Source; disab
       <div className="form-row">{([
         ["maxPages", "Page limit", 1, 1000000], ["maxDepth", "Maximum depth", 0, 50],
         ["concurrency", "Concurrent requests", 1, 64], ["perDomainConcurrency", "Requests per domain", 1, 16],
-        ["requestTimeoutMs", "Request timeout (ms)", 1000, 120000]
-      ] as const).map(([name, label, min, max]) => <label className="field" key={name}>{label}<input className="input" type="number" name={name} min={min} max={max} defaultValue={source.config[name]} required/></label>)}</div>
+        ["requestTimeoutMs", "Request timeout (ms)", 1000, 120000],
+        ["retryMaxAttempts", "Maximum fetch attempts", 1, 5],
+        ["retryBaseDelayMs", "Retry base delay (ms)", 100, 10000],
+        ["retryMaxDelayMs", "Maximum retry wait (ms)", 100, 30000]
+      ] as const).map(([name, label, min, max]) => <label className="field" key={name}>{label}<input className="input" type="number" name={name} min={min} max={max} defaultValue={source.config[name] ?? ({retryMaxAttempts:3,retryBaseDelayMs:500,retryMaxDelayMs:30000} as Record<string, number>)[name]} required/></label>)}</div>
+      <p className="muted">Transient HTTP/network failures use backoff. Retry-After above the wait limit leaves the page failed for a later recrawl.</p>
       <span className="badge">Respect robots.txt: ON</span>
       {error && <p role="alert" style={{ color: "var(--danger)", whiteSpace: "pre-wrap" }}>{error}</p>}{saved && <p role="status">Crawl rules saved.</p>}
       <button className="btn primary" disabled={disabled}>Save crawl rules</button>
