@@ -33,28 +33,28 @@ export async function searchRoutes(
   keys: ApiKeyService,
   runtime: SearchRuntime
 ) {
+  async function searchEngine(index: typeof indexes.$inferSelect, version: typeof indexVersions.$inferSelect) {
+    const rows = await db.select().from(synonymSets)
+      .where(and(eq(synonymSets.projectId, index.projectId), eq(synonymSets.enabled, true)));
+    return runtime.engine(index.id, String(version.sequence), version.checksum,
+      rows.map(row => ({ terms: row.terms, oneWay: row.oneWay })));
+  }
   app.post("/v1/indexes/:indexSlug/search", async (request) => {
     const auth = await keys.authenticate(apiToken(request), ["search", "indexing", "admin"], request.ip);
     const { indexSlug } = z.object({ indexSlug: z.string().min(1).max(80) }).parse(request.params);
     const query = searchRequestSchema.parse(request.body);
     const { index, version } = await resolveIndex(db, auth.projectId, indexSlug);
-    const synonymRows = await db.select().from(synonymSets)
-      .where(and(eq(synonymSets.projectId, auth.projectId), eq(synonymSets.enabled, true)));
-    const engine = await runtime.engine(
-      index.id,
-      String(version.sequence),
-      version.checksum,
-      synonymRows.map((row) => ({ terms: row.terms, ...(row.oneWay ? { oneWay: true } : {}) }))
-    );
+    const engine = await searchEngine(index, version);
     const result = engine.search(query);
 
-    const [event] = await db.insert(searchEvents).values({
-      projectId: auth.projectId,
-      indexId: index.id,
-      query: query.query,
-      resultCount: result.total,
-      latencyMs: result.processingTimeMs
-    }).returning({ id: searchEvents.id });
+    const event = await db.transaction(async tx => {
+      const [project] = await tx.select().from(projects).where(eq(projects.id, auth.projectId)).for("share");
+      if (!project?.analyticsEnabled) return undefined;
+      const [stored] = await tx.insert(searchEvents).values({ projectId: auth.projectId,
+        indexId: index.id, query: query.query, resultCount: result.total,
+        latencyMs: result.processingTimeMs }).returning({ id: searchEvents.id });
+      return stored;
+    });
 
     return { ...result, searchEventId: event?.id };
   });
@@ -79,8 +79,8 @@ export async function searchRoutes(
     const { indexSlug, documentId } = z.object({ indexSlug: z.string(), documentId: z.string() }).parse(request.params);
     const query = searchRequestSchema.parse(request.body);
     const { index, version } = await resolveIndex(db, auth.projectId, indexSlug);
-    const engine = await runtime.engine(index.id, String(version.sequence), version.checksum, []);
-    return { documentId, components: engine.explain(documentId, query), indexVersion: String(version.sequence) };
+    const engine = await searchEngine(index, version);
+    return { documentId, components: engine.explain(documentId, { ...query, offset: 0, cursor: undefined }), indexVersion: String(version.sequence) };
   });
 
   app.post("/v1/analytics/click", async (request, reply) => {
@@ -91,7 +91,18 @@ export async function searchRoutes(
       position: z.number().int().min(1).max(10_000),
       searchEventId: z.string().uuid().optional()
     }).parse(request.body);
-    await db.insert(searchClicks).values({ projectId: auth.projectId, ...body });
-    return reply.code(202).send({ accepted: true });
+    const stored = await db.transaction(async tx => {
+      const [project] = await tx.select().from(projects).where(eq(projects.id, auth.projectId)).for("share");
+      if (body.searchEventId) {
+        const [event] = await tx.select().from(searchEvents).where(and(
+          eq(searchEvents.id, body.searchEventId), eq(searchEvents.projectId, auth.projectId))).for("share");
+        if (!event) throw new AppError("VALIDATION_ERROR", "Search event not found", 404);
+        if (event.query !== body.query) throw new AppError("VALIDATION_ERROR", "Click query does not match search event", 400);
+      }
+      if (!project?.analyticsEnabled) return false;
+      await tx.insert(searchClicks).values({ projectId: auth.projectId, ...body });
+      return true;
+    });
+    return reply.code(202).send({ accepted: true, stored });
   });
 }
