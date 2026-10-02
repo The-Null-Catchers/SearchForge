@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { SearchRequest } from "@searchforge/shared";
 import { Analyzer } from "./analyzer.js";
 import { damerauLevenshtein, lowerBound } from "./distance.js";
@@ -39,15 +40,28 @@ function positionsContainPhrase(positionLists: number[][]): boolean {
   return false;
 }
 
+function comparablePair(left: unknown, right: unknown): [number, number] | undefined {
+  if (typeof left === "number" && typeof right === "number") return [left, right];
+  if (typeof left === "string" && typeof right === "string") {
+    const leftDate = Date.parse(left);
+    const rightDate = Date.parse(right);
+    if (Number.isFinite(leftDate) && Number.isFinite(rightDate)) return [leftDate, rightDate];
+  }
+  return undefined;
+}
+
 function comparePrimitive(left: unknown, op: string, right: unknown): boolean {
   if (op === "eq") return left === right || (Array.isArray(left) && left.includes(right));
   if (op === "neq") return !(left === right || (Array.isArray(left) && left.includes(right)));
   if (op === "in") return Array.isArray(right) && right.some((value) => value === left || (Array.isArray(left) && left.includes(value)));
-  if (typeof left !== "number" || typeof right !== "number") return false;
-  if (op === "gt") return left > right;
-  if (op === "gte") return left >= right;
-  if (op === "lt") return left < right;
-  if (op === "lte") return left <= right;
+
+  const pair = comparablePair(left, right);
+  if (!pair) return false;
+  const [leftValue, rightValue] = pair;
+  if (op === "gt") return leftValue > rightValue;
+  if (op === "gte") return leftValue >= rightValue;
+  if (op === "lt") return leftValue < rightValue;
+  if (op === "lte") return leftValue <= rightValue;
   return false;
 }
 
@@ -61,45 +75,110 @@ function getField(document: SearchDocument, path: string): unknown {
   return value;
 }
 
-function matchesFilters(document: SearchDocument, filters: SearchRequest["filters"]): boolean {
-  if (!filters) return true;
+function matchesFlatFilters(document: SearchDocument, filters: Record<string, unknown>): boolean {
   return Object.entries(filters).every(([field, filter]) => {
     const value = getField(document, field);
     if (filter === null || typeof filter !== "object" || Array.isArray(filter)) {
       return value === filter || (Array.isArray(value) && value.includes(filter));
     }
-    const condition = filter as { op: string; value: unknown };
+
+    const condition = filter as { op?: string; value?: unknown };
+    if (!condition.op) return false;
     if (condition.op === "range") {
-      if (typeof value !== "number" || !condition.value || typeof condition.value !== "object") return false;
-      const range = condition.value as { min?: number; max?: number };
-      return (range.min === undefined || value >= range.min) && (range.max === undefined || value <= range.max);
+      if (!condition.value || typeof condition.value !== "object" || Array.isArray(condition.value)) return false;
+      const range = condition.value as { min?: unknown; max?: unknown };
+      if (range.min !== undefined) {
+        const pair = comparablePair(value, range.min);
+        if (!pair || pair[0] < pair[1]) return false;
+      }
+      if (range.max !== undefined) {
+        const pair = comparablePair(value, range.max);
+        if (!pair || pair[0] > pair[1]) return false;
+      }
+      return true;
     }
+
     return comparePrimitive(value, condition.op, condition.value);
   });
 }
 
-function encodeCursor(version: string, offset: number): string {
-  return Buffer.from(JSON.stringify({ version, offset })).toString("base64url");
+function matchesFilters(document: SearchDocument, filters: SearchRequest["filters"]): boolean {
+  if (!filters) return true;
+  if ("and" in filters && Array.isArray(filters.and)) {
+    return filters.and.every((entry) => matchesFilters(document, entry));
+  }
+  if ("or" in filters && Array.isArray(filters.or)) {
+    return filters.or.some((entry) => matchesFilters(document, entry));
+  }
+  return matchesFlatFilters(document, filters as Record<string, unknown>);
 }
 
-function decodeCursor(cursor: string): { version: string; offset: number } {
-  const parsed = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8")) as { version?: unknown; offset?: unknown };
-  if (typeof parsed.version !== "string" || typeof parsed.offset !== "number") throw new Error("Invalid cursor");
-  return { version: parsed.version, offset: parsed.offset };
+function stableSerialize(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map((entry) => stableSerialize(entry)).join(",")}]`;
+  if (value && typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .filter(([, entry]) => entry !== undefined)
+      .sort(([left], [right]) => left.localeCompare(right));
+    return `{${entries.map(([key, entry]) => `${JSON.stringify(key)}:${stableSerialize(entry)}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
 }
 
-function highlightRanges(document: SearchDocument, terms: string[]): Array<{ field: string; start: number; end: number; term: string }> {
+function requestFingerprint(request: SearchRequest): string {
+  const semanticRequest = {
+    query: request.query,
+    filters: request.filters ?? null,
+    facets: [...(request.facets ?? [])].sort(),
+    sort: request.sort ?? null,
+    typoTolerance: request.typoTolerance ?? true
+  };
+  return createHash("sha256").update(stableSerialize(semanticRequest)).digest("base64url").slice(0, 24);
+}
+
+function encodeCursor(version: string, offset: number, queryFingerprint: string): string {
+  return Buffer.from(JSON.stringify({ version, offset, queryFingerprint })).toString("base64url");
+}
+
+function decodeCursor(cursor: string): { version: string; offset: number; queryFingerprint: string } {
+  const parsed = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8")) as {
+    version?: unknown;
+    offset?: unknown;
+    queryFingerprint?: unknown;
+  };
+  if (
+    typeof parsed.version !== "string"
+    || typeof parsed.offset !== "number"
+    || !Number.isInteger(parsed.offset)
+    || parsed.offset < 0
+    || typeof parsed.queryFingerprint !== "string"
+  ) {
+    throw new Error("Invalid cursor");
+  }
+  return {
+    version: parsed.version,
+    offset: parsed.offset,
+    queryFingerprint: parsed.queryFingerprint
+  };
+}
+
+function highlightRanges(
+  document: SearchDocument,
+  terms: string[],
+  analyzer: Analyzer
+): Array<{ field: string; start: number; end: number; term: string }> {
   const output: Array<{ field: string; start: number; end: number; term: string }> = [];
+  const wanted = new Set(terms);
+
   for (const field of ["title", "content"]) {
     const value = document[field];
     if (typeof value !== "string") continue;
-    const lower = value.toLocaleLowerCase("en-US");
-    for (const term of terms) {
-      const index = lower.indexOf(term.toLocaleLowerCase("en-US"));
-      if (index >= 0) output.push({ field, start: index, end: index + term.length, term });
+    for (const token of analyzer.analyzeWithOffsets(value)) {
+      if (!wanted.has(token.term)) continue;
+      output.push({ field, start: token.start, end: token.end, term: token.term });
       if (output.length >= 12) return output;
     }
   }
+
   return output;
 }
 
@@ -295,10 +374,12 @@ export class SegmentSearchEngine implements SearchCore {
       facets[facet] = counts;
     }
 
+    const queryFingerprint = requestFingerprint(request);
     let offset = request.offset;
     if (request.cursor) {
       const cursor = decodeCursor(request.cursor);
       if (cursor.version !== this.segment.version) throw new Error("Cursor belongs to a different index version");
+      if (cursor.queryFingerprint !== queryFingerprint) throw new Error("Cursor belongs to a different search request");
       offset = cursor.offset;
     }
 
@@ -307,7 +388,7 @@ export class SegmentSearchEngine implements SearchCore {
       id: entry.id,
       score: entry.score,
       document: entry.document,
-      highlights: highlightRanges(entry.document, [...parsed.terms, ...parsed.phrases.flat()]),
+      highlights: highlightRanges(entry.document, [...queryTerms, ...parsed.phrases.flat()], this.analyzer),
       ...(request.debug ? { explanation: components[entry.id] } : {})
     }));
     const nextOffset = offset + hits.length;
@@ -319,7 +400,7 @@ export class SegmentSearchEngine implements SearchCore {
       indexVersion: this.segment.version,
       hits,
       facets,
-      ...(nextOffset < ranked.length ? { nextCursor: encodeCursor(this.segment.version, nextOffset) } : {}),
+      ...(nextOffset < ranked.length ? { nextCursor: encodeCursor(this.segment.version, nextOffset, queryFingerprint) } : {}),
       ...(request.debug ? { debug: { expandedTerms, matchedPhrases, components } } : {})
     };
   }
