@@ -31,6 +31,23 @@ export class ProjectCleanup {
     }
 
     return this.db.transaction(async tx => {
+      // The project is already fenced before this worker can be dispatched, so
+      // no new sources/indexes can appear. Drain processor locks before taking
+      // the project row lock to avoid inversion with source cleanup.
+      const projectSources = await tx.select({ id: sources.id }).from(sources)
+        .where(eq(sources.projectId, data.projectId)).orderBy(asc(sources.id));
+      const projectIndexes = await tx.select({ id: indexes.id }).from(indexes)
+        .where(eq(indexes.projectId, data.projectId)).orderBy(asc(indexes.id));
+
+      // Source cleanup/crawlers take source locks before index builder locks.
+      // Keep the same global order so deletion drains active processors safely.
+      for (const source of projectSources) {
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`source:${source.id}`}, 0))`);
+      }
+      for (const index of projectIndexes) {
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${index.id}, 0))`);
+      }
+
       const [project] = await tx.select().from(projects)
         .where(eq(projects.id, data.projectId)).for("update");
       const [receipt] = await tx.select().from(jobs)
@@ -47,20 +64,6 @@ export class ProjectCleanup {
       if (receipt.state === "completed") return receipt.progress;
       if (receipt.state === "failed" || receipt.cancelRequestedAt || receipt.state === "cancelled") {
         throw new Error("Project cleanup requires explicit retry admission");
-      }
-
-      const projectSources = await tx.select({ id: sources.id }).from(sources)
-        .where(eq(sources.projectId, project.id)).orderBy(asc(sources.id));
-      const projectIndexes = await tx.select({ id: indexes.id }).from(indexes)
-        .where(eq(indexes.projectId, project.id)).orderBy(asc(indexes.id));
-
-      // Source cleanup/crawlers take source locks before index builder locks.
-      // Keep the same global order so deletion drains active processors safely.
-      for (const source of projectSources) {
-        await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`source:${source.id}`}, 0))`);
-      }
-      for (const index of projectIndexes) {
-        await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${index.id}, 0))`);
       }
 
       // Remove immutable search data before metadata. A storage failure rolls
