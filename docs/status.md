@@ -91,7 +91,7 @@ Disabling analytics stops new records; it does not erase historical records.
 
 - Crawl retries are implemented for transient page fetch failures; durable per-page
   deferred retries and operator retry/dead-letter controls remain follow-up work.
-- Project cleanup lifecycle and outbox retention/recovery administration.
+- Outbox retention/recovery administration.
 - Complete ranking/settings/logs workflows,
   document field editing and privacy-aware analytics charts.
 - Key-specific/project quotas, expiration/IP configuration UI and notifications.
@@ -102,4 +102,6 @@ No performance numbers are claimed without a measured corpus and hardware profil
 
 ## Deletion lifecycle
 
-Confirmed, admin-only index deletion fences writes and drains builders before file/metadata erasure. Source deletion fences crawling, queues replacement builds, prevents rollback resurrection and purges obsolete segment files while preserving other documents. See [index deletion](index-deletion.md) and [source deletion](source-deletion.md). Project deletion remains pending. The current local suite passes 50 unit tests; PostgreSQL/Redis scenarios verify producer draining, storage failure/retry, delivery recovery and retained-segment inspection in CI.
+Owner-only project deletion now fences all project writes, revokes keys, drains source/index processors, removes immutable index storage and project-owned data, and retains only a scrubbed tombstone, durable cleanup receipt and security audit trail. See [project deletion](project-deletion.md).
+
+Confirmed, admin-only index deletion fences writes and drains builders before file/metadata erasure. Source deletion fences crawling, queues replacement builds, prevents rollback resurrection and purges obsolete segment files while preserving other documents. See [index deletion](index-deletion.md) and [source deletion](source-deletion.md). The current local suite passes 50 unit tests; PostgreSQL/Redis scenarios verify producer draining, storage failure/retry, delivery recovery and retained-segment inspection in CI.
