@@ -35,6 +35,33 @@ describe("SegmentSearchEngine", () => {
     expect(result.hits[0]?.id).toBe("a");
   });
 
+  it("uses the persisted deletion dictionary without scanning the full vocabulary", () => {
+    const guardedVocabulary = new Proxy(segment.vocabulary, {
+      get(target, property, receiver) {
+        if (property === Symbol.iterator) throw new Error("full vocabulary scan");
+        return Reflect.get(target, property, receiver);
+      }
+    });
+    const guardedEngine = new SegmentSearchEngine({ ...segment, vocabulary: guardedVocabulary });
+    const result = guardedEngine.search(searchRequestSchema.parse({ query: "javscript", typoTolerance: true }));
+    expect(result.hits[0]?.id).toBe("a");
+  });
+
+  it("rebuilds a deletion dictionary once for legacy segments", () => {
+    const { typoDeletes: _typoDeletes, ...legacySegment } = segment;
+    const legacyEngine = new SegmentSearchEngine(legacySegment);
+    const result = legacyEngine.search(searchRequestSchema.parse({ query: "javscript", typoTolerance: true }));
+    expect(result.hits[0]?.id).toBe("a");
+  });
+
+  it("handles insertion and transposition typo shapes", () => {
+    const insertion = engine.search(searchRequestSchema.parse({ query: "searchh", typoTolerance: true }));
+    expect(insertion.hits.some((hit) => hit.id === "a" || hit.id === "b")).toBe(true);
+
+    const transposed = engine.search(searchRequestSchema.parse({ query: "serach", typoTolerance: true }));
+    expect(transposed.hits.some((hit) => hit.id === "a" || hit.id === "b")).toBe(true);
+  });
+
   it("searches normalized Arabic", () => {
     const result = engine.search(searchRequestSchema.parse({ query: "مُحَرِّكات البحث" }));
     expect(result.hits.some((hit) => hit.id === "ar")).toBe(true);

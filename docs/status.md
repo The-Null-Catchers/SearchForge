@@ -80,12 +80,18 @@ Disabling analytics stops new records; it does not erase historical records.
 - Cursors bound to both index version and semantic search request.
 - Analyzer-aware safe highlight ranges for normalized Arabic and typo-expanded matches.
 
+## Typo dictionary completion
+
+- Immutable segments now persist a bounded deletion dictionary for typo candidate pruning.
+- Search generates deletion keys per query and runs edit-distance scoring only on dictionary candidates.
+- Legacy segments without the dictionary rebuild it once when loaded, preserving backward compatibility.
+- Regression tests guard against full vocabulary iteration on typo queries.
+
 ## Remaining before MVP release
 
 - Crawl retries are implemented for transient page fetch failures; durable per-page
   deferred retries and operator retry/dead-letter controls remain follow-up work.
 - Project cleanup lifecycle and outbox retention/recovery administration.
-- Efficient typo dictionaries for large vocabularies.
 - Complete ranking/settings/logs workflows,
   document field editing and privacy-aware analytics charts.
 - Key-specific/project quotas, expiration/IP configuration UI and notifications.
