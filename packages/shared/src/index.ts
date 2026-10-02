@@ -48,7 +48,10 @@ export type IndexSettings = z.infer<typeof indexSettingsSchema>;
 export type ScalarFilterValue = string | number | boolean;
 export type FilterCondition = {
   op: "eq" | "neq" | "gt" | "gte" | "lt" | "lte" | "in" | "range";
-  value: ScalarFilterValue | ScalarFilterValue[] | { min?: number | string; max?: number | string };
+  value: ScalarFilterValue | ScalarFilterValue[] | {
+    min?: number | string | undefined;
+    max?: number | string | undefined;
+  };
 };
 export type FlatFilters = Record<string, ScalarFilterValue | FilterCondition>;
 export type FilterExpression = FlatFilters | { and: FilterExpression[] } | { or: FilterExpression[] };
