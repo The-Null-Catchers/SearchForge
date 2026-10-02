@@ -3,6 +3,7 @@ import { mkdir, readFile, link, unlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { IndexSettings } from "@searchforge/shared";
 import { Analyzer } from "./analyzer.js";
+import { buildDeletionDictionary } from "./distance.js";
 import type { BuildOptions, SearchDocument, Segment, TermPostings } from "./types.js";
 
 function asText(value: unknown): string {
@@ -74,6 +75,11 @@ export function buildSegment(
     averageFieldLength[field] = documents.length === 0 ? 0 : total / documents.length;
   }
 
+  const sortedVocabulary = [...vocabulary].sort();
+  const typoDeletes = settings.typoTolerance.enabled
+    ? buildDeletionDictionary(sortedVocabulary, settings.typoTolerance.maxDistance)
+    : undefined;
+
   const segment: Segment = {
     id: randomUUID(),
     version: options.version,
@@ -84,7 +90,8 @@ export function buildSegment(
     postings: serializedPostings,
     documentLengths,
     averageFieldLength,
-    vocabulary: [...vocabulary].sort()
+    vocabulary: sortedVocabulary,
+    ...(typoDeletes ? { typoDeletes } : {})
   };
   segment.checksum = checksumSegment(segment);
   return segment;
