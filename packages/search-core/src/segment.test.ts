@@ -13,7 +13,9 @@ describe("immutable segment publication", () => {
       const store = new FileSegmentStore(root);
       const first = buildSegment([{ id: "a", title: "البحث search" }], settings, { version: "17" });
       await store.write("index", first);
-      expect((await store.read("index", "17")).checksum).toBe(first.checksum);
+      const stored = await store.read("index", "17");
+      expect(stored.checksum).toBe(first.checksum);
+      expect(stored.typoDeletes?.search).toContain("search");
       const replacement = buildSegment([{ id: "b" }], settings, { version: "17" });
       await expect(store.write("index", replacement)).rejects.toThrow();
       expect((await store.read("index", "17")).documents.a).toBeDefined();
