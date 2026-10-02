@@ -73,13 +73,19 @@ The analytics dashboard exposes loading/errors/retry and rejects stale responses
 after project changes. Regression coverage is in the PostgreSQL integration suite.
 Disabling analytics stops new records; it does not erase historical records.
 
+## Recent search-core completion
+
+- Compound AND/OR filter expressions with backward-compatible flat filters.
+- Numeric and ISO-date comparisons/ranges.
+- Cursors bound to both index version and semantic search request.
+- Analyzer-aware safe highlight ranges for normalized Arabic and typo-expanded matches.
+
 ## Remaining before MVP release
 
 - Crawl retries are implemented for transient page fetch failures; durable per-page
   deferred retries and operator retry/dead-letter controls remain follow-up work.
 - Project cleanup lifecycle and outbox retention/recovery administration.
-- Compound AND/OR and date filters, query-bound cursors, normalized highlighting
-  and efficient typo dictionaries for large vocabularies.
+- Efficient typo dictionaries for large vocabularies.
 - Complete ranking/settings/logs workflows,
   document field editing and privacy-aware analytics charts.
 - Key-specific/project quotas, expiration/IP configuration UI and notifications.
