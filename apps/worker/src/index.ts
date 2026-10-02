@@ -26,6 +26,7 @@ collectDefaultMetrics({ register: metrics, prefix: "searchforge_worker_" });
 const completed = new Counter({ name: "searchforge_cleanup_jobs_completed_total", help: "Completed cleanup jobs", registers: [metrics] });
 const failed = new Counter({ name: "searchforge_cleanup_jobs_failed_total", help: "Failed cleanup jobs", registers: [metrics] });
 const active = new Gauge({ name: "searchforge_cleanup_jobs_active", help: "Active cleanup jobs", registers: [metrics] });
+const outboxPurged = new Counter({ name: "searchforge_outbox_rows_purged_total", help: "Terminal outbox rows purged after retention", registers: [metrics] });
 
 const cleanup = new IndexCleanup(db, storagePath);
 const sourceCleanup = new SourceCleanup(db, storagePath);
@@ -74,6 +75,10 @@ server.get("/metrics", async (_request, reply) => {
   reply.header("Content-Type", metrics.contentType);
   return metrics.metrics();
 });
+const configuredRetentionDays = Number(process.env.OUTBOX_RETENTION_DAYS ?? "7");
+const outboxRetentionMs = (Number.isFinite(configuredRetentionDays) && configuredRetentionDays >= 1
+  ? configuredRetentionDays : 7) * 24 * 60 * 60 * 1000;
+let nextOutboxPurgeAt = 0;
 let tickInFlight: Promise<void> | undefined;
 function tick() {
   if (tickInFlight) return tickInFlight;
@@ -83,6 +88,15 @@ function tick() {
       await dispatcher.dispatch();
       const recovery = await dispatcher.reconcile();
       if (recovery.recovered) server.log.warn(recovery, "Recovered missing queued Redis jobs");
+      const now = Date.now();
+      if (now >= nextOutboxPurgeAt) {
+        nextOutboxPurgeAt = now + 5 * 60 * 1000;
+        const purged = await dispatcher.purgeTerminalOutbox(new Date(now), outboxRetentionMs);
+        if (purged > 0) {
+          outboxPurged.inc(purged);
+          server.log.info({ purged, retentionDays: outboxRetentionMs / 86_400_000 }, "Purged retained terminal outbox rows");
+        }
+      }
     } catch (error) { server.log.error({ err: error }, "Job dispatch/schedule tick failed; will retry"); }
   })().finally(() => { tickInFlight = undefined; });
   return tickInFlight;
