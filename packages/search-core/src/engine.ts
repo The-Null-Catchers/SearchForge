@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { SearchRequest } from "@searchforge/shared";
 import { Analyzer } from "./analyzer.js";
-import { damerauLevenshtein, lowerBound } from "./distance.js";
+import { buildDeletionDictionary, damerauLevenshtein, deletionVariants, lowerBound } from "./distance.js";
 import type { CoreSearchResponse, SearchCore, SearchDocument, Segment, TermPostings } from "./types.js";
 
 type ParsedQuery = {
@@ -185,6 +185,7 @@ function highlightRanges(
 export class SegmentSearchEngine implements SearchCore {
   private readonly analyzer: Analyzer;
   private readonly synonyms: SynonymMap;
+  private readonly typoDeletes: Record<string, string[]>;
 
   constructor(
     private readonly segment: Segment,
@@ -192,6 +193,10 @@ export class SegmentSearchEngine implements SearchCore {
   ) {
     this.analyzer = new Analyzer(segment.settings);
     this.synonyms = this.buildSynonyms(synonyms);
+    this.typoDeletes = segment.typoDeletes
+      ?? (segment.settings.typoTolerance.enabled
+        ? buildDeletionDictionary(segment.vocabulary, segment.settings.typoTolerance.maxDistance)
+        : {});
   }
 
   private buildSynonyms(groups: Array<{ terms: string[]; oneWay?: boolean }>): SynonymMap {
@@ -225,11 +230,16 @@ export class SegmentSearchEngine implements SearchCore {
 
   private typoCandidates(term: string, maxDistance: number, limit = 12): string[] {
     if (term.length < this.segment.settings.typoTolerance.minTokenLength) return [];
-    const first = term[0];
+
+    const candidateTerms = new Set<string>();
+    for (const variant of deletionVariants(term, maxDistance)) {
+      for (const candidate of this.typoDeletes[variant] ?? []) {
+        if (Math.abs(candidate.length - term.length) <= maxDistance) candidateTerms.add(candidate);
+      }
+    }
+
     const candidates: Array<{ term: string; distance: number; df: number }> = [];
-    for (const candidate of this.segment.vocabulary) {
-      if (candidate[0] !== first) continue;
-      if (Math.abs(candidate.length - term.length) > maxDistance) continue;
+    for (const candidate of candidateTerms) {
       const distance = damerauLevenshtein(term, candidate, maxDistance);
       if (distance > maxDistance) continue;
       let df = 0;
@@ -238,6 +248,7 @@ export class SegmentSearchEngine implements SearchCore {
       }
       candidates.push({ term: candidate, distance, df });
     }
+
     candidates.sort((a, b) => a.distance - b.distance || b.df - a.df || a.term.localeCompare(b.term));
     return candidates.slice(0, limit).map((entry) => entry.term);
   }
