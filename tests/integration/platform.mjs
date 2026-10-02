@@ -19,6 +19,7 @@ const { buildServer } = await import('../../apps/api/dist/server.js');
 const { CrawlRunner } = await import('../../apps/crawler/dist/crawler.js');
 const { SourceCleanup, obsoleteSegmentFile } = await import('../../apps/worker/dist/source-cleanup.js');
 const { IndexCleanup } = await import('../../apps/worker/dist/cleanup.js');
+const { ProjectCleanup } = await import('../../apps/worker/dist/project-cleanup.js');
 const { IndexBuilder } = await import('../../apps/indexer/dist/index-builder.js');
 const { createDatabase } = await import('../../packages/db/dist/index.js');
 const { createRedisConnection, JobDispatcher, JobCancelled, finishCancelled } = await import('../../packages/queue/dist/index.js');
@@ -491,7 +492,11 @@ try {
   deletionDocumentLock = await pool.connect();
   await deletionDocumentLock.query('BEGIN');
   await deletionDocumentLock.query('SELECT document_id FROM documents WHERE index_id=$1 AND document_id=$2 FOR UPDATE', [deleteIndexId, 'delete-me']);
-  cleanupWorker = new Worker('cleanup', job => job.data.targetType === 'source' ? new SourceCleanup(db, storage, 15000).run(job.data) : cleanup.run(job.data), { connection: redis });
+  cleanupWorker = new Worker('cleanup', job => job.data.targetType === 'project'
+    ? new ProjectCleanup(db, storage).run(job.data)
+    : job.data.targetType === 'source'
+      ? new SourceCleanup(db, storage, 15000).run(job.data)
+      : cleanup.run(job.data), { connection: redis });
   cleanupWorker.on('error', error => console.error(error));
   await cleanupWorker.waitUntilReady();
   await new Promise(resolve => setTimeout(resolve, 100));
@@ -642,6 +647,98 @@ try {
   }
   assert.equal((await pool.query("SELECT count(*) FROM audit_logs WHERE target_id=$1 AND action='source.deleted'", [removalSource.id])).rows[0].count, '1');
   assert.equal((await pool.query("SELECT count(*) FROM audit_logs WHERE target_id=$1 AND action='source.deletion_retried'", [removalSource.id])).rows[0].count, '1');
+
+  // Project deletion fences every project surface, physically removes index
+  // storage and child data, and retains only a scrubbed tombstone + receipt.
+  const doomed = await request('POST', `/v1/organizations/${org.id}/projects`,
+    { name: 'Disposable project', slug: 'disposable-project' }, owner.accessToken);
+  const doomedSdk = new SearchForge({
+    projectId: doomed.id,
+    baseUrl: `http://127.0.0.1:${address.port}`,
+    apiKey: doomed.adminKey
+  });
+  const doomedBuild = await doomedSdk.indexDocuments([
+    { id: 'erase-me', title: 'Project deletion corpus', content: 'sensitive disposable content' }
+  ]);
+  await waitJob(doomedBuild.jobId, owner.accessToken);
+  await request('POST', `/v1/projects/${doomed.id}/sources`, {
+    name: 'Disposable source',
+    config: { startUrls: [`http://127.0.0.1:${site.address().port}`], maxPages: 1 }
+  }, owner.accessToken);
+  await request('POST', `/v1/projects/${doomed.id}/synonyms`, {
+    name: 'Disposable synonyms', terms: ['erase', 'delete']
+  }, owner.accessToken);
+  await doomedSdk.search('deletion');
+
+  const projectDeletePath = `/v1/projects/${doomed.id}`;
+  const viewerProjectDelete = await app.inject({
+    method: 'DELETE',
+    url: projectDeletePath,
+    payload: { confirmation: 'disposable-project' },
+    headers: { authorization: `Bearer ${viewer.accessToken}` }
+  });
+  assert.equal(viewerProjectDelete.statusCode, 403);
+  const wrongProjectConfirmation = await app.inject({
+    method: 'DELETE',
+    url: projectDeletePath,
+    payload: { confirmation: 'wrong' },
+    headers: deleteHeaders
+  });
+  assert.equal(wrongProjectConfirmation.statusCode, 400);
+
+  await cleanupWorker.pause();
+  const projectDeletion = await request('DELETE', projectDeletePath,
+    { confirmation: 'disposable-project' }, owner.accessToken);
+  const repeatedProjectDeletion = await request('DELETE', projectDeletePath,
+    { confirmation: 'disposable-project' }, owner.accessToken);
+  assert.equal(repeatedProjectDeletion.jobId, projectDeletion.jobId);
+
+  const visibleProjects = await request('GET', '/v1/me/projects', undefined, owner.accessToken);
+  assert.ok(!visibleProjects.projects.some(item => item.id === doomed.id));
+  const deadKey = await app.inject({
+    method: 'POST',
+    url: '/v1/indexes/docs/search',
+    payload: { query: 'deletion' },
+    headers: { authorization: `Bearer ${doomed.adminKey}` }
+  });
+  assert.equal(deadKey.statusCode, 401);
+  await assert.rejects(
+    pool.query("INSERT INTO jobs(project_id,type) VALUES($1,'index')", [doomed.id]),
+    error => error.code === '55000'
+  );
+  assert.equal((await app.inject({
+    method: 'POST',
+    url: `/v1/jobs/${projectDeletion.jobId}/cancel`,
+    headers: deleteHeaders
+  })).statusCode, 409);
+
+  await cleanupWorker.resume();
+  const deletedProjectReceipt = await waitJob(projectDeletion.jobId, owner.accessToken);
+  assert.equal(deletedProjectReceipt.progress.cleaned, true);
+  assert.equal((await new ProjectCleanup(db, storage).run({
+    databaseJobId: projectDeletion.jobId,
+    projectId: doomed.id,
+    targetType: 'project',
+    targetId: doomed.id
+  })).cleaned, true);
+  await assert.rejects(access(join(storage, doomed.index.id)));
+
+  const tombstone = (await pool.query(
+    'SELECT name,slug,deletion_requested_at,deleted_at FROM projects WHERE id=$1',
+    [doomed.id]
+  )).rows[0];
+  assert.equal(tombstone.name, 'Deleted project');
+  assert.equal(tombstone.slug, `deleted-${doomed.id}`);
+  assert.ok(tombstone.deletion_requested_at);
+  assert.ok(tombstone.deleted_at);
+  for (const table of ['indexes', 'sources', 'api_keys', 'search_events', 'search_clicks', 'synonym_sets', 'usage_counters']) {
+    assert.equal((await pool.query(`SELECT count(*) FROM ${table} WHERE project_id=$1`, [doomed.id])).rows[0].count, '0', table);
+  }
+  assert.equal((await pool.query('SELECT count(*) FROM jobs WHERE project_id=$1', [doomed.id])).rows[0].count, '1');
+  assert.equal((await pool.query(
+    "SELECT count(*) FROM audit_logs WHERE target_id=$1 AND action='project.deleted'",
+    [doomed.id]
+  )).rows[0].count, '1');
 
   // Concurrent refreshes serialize: one rotates; the reuse attempt revokes its family.
   const auth = new AuthService(db, config);

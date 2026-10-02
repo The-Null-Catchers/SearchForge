@@ -1,3 +1,4 @@
+import { ProjectCleanup } from "./project-cleanup.js";
 import { SourceCleanup } from "./source-cleanup.js";
 import { IndexCleanup } from "./cleanup.js";
 import Fastify from "fastify";
@@ -28,10 +29,15 @@ const active = new Gauge({ name: "searchforge_cleanup_jobs_active", help: "Activ
 
 const cleanup = new IndexCleanup(db, storagePath);
 const sourceCleanup = new SourceCleanup(db, storagePath);
+const projectCleanup = new ProjectCleanup(db, storagePath);
 const cleanupWorker = new Worker<CleanupJobData>("cleanup", async (job) => {
   active.inc();
   try {
-    const result = job.data.targetType === "source" ? await sourceCleanup.run(job.data) : await cleanup.run(job.data);
+    const result = job.data.targetType === "project"
+      ? await projectCleanup.run(job.data)
+      : job.data.targetType === "source"
+        ? await sourceCleanup.run(job.data)
+        : await cleanup.run(job.data);
     completed.inc();
     return result;
   } catch (error) {

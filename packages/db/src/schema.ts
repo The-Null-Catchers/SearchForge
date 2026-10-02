@@ -70,6 +70,8 @@ export const projects = pgTable("projects", {
   rankingSettings: jsonb("ranking_settings").notNull().$type<Record<string, unknown>>().default({}),
   autocompleteSettings: jsonb("autocomplete_settings").notNull().$type<Record<string, unknown>>().default({}),
   analyticsEnabled: boolean("analytics_enabled").notNull().default(true),
+  deletionRequestedAt: timestamp("deletion_requested_at", { withTimezone: true }),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
   ...timestamps
 }, (t) => ({
   orgSlugUnique: uniqueIndex("projects_org_slug_uq").on(t.organizationId, t.slug),

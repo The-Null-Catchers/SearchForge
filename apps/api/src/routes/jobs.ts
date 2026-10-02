@@ -18,6 +18,9 @@ export async function jobRoutes(app: FastifyInstance, db: Db, redis: IORedis, au
       .innerJoin(memberships, eq(memberships.organizationId, projects.organizationId))
       .where(and(eq(jobs.id, jobId), eq(memberships.userId, claims.userId))).limit(1);
     if (!row) throw new AppError("JOB_NOT_FOUND", "Job not found", 404);
+    if (row.job.type === "cleanup") {
+      throw new AppError("JOB_NOT_CANCELLABLE", "Deletion cleanup must finish once accepted", 409);
+    }
     const access = await projectAccess(db, claims.userId, row.job.projectId, "developer");
     const result = await db.transaction(async tx => {
       const [job] = await tx.select().from(jobs).where(eq(jobs.id, jobId)).for("update");

@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { enqueueCrawl } from "@searchforge/queue";
-import { and, desc, eq, getTableColumns, lt, or, sql } from "drizzle-orm";
+import { and, desc, eq, getTableColumns, isNull, lt, or, sql } from "drizzle-orm";
 import {
   apiKeys,
   auditLogs,
@@ -37,7 +37,12 @@ export async function projectAccess(db: Db, userId: string, projectId: string, m
   })
     .from(projects)
     .innerJoin(memberships, eq(memberships.organizationId, projects.organizationId))
-    .where(and(eq(projects.id, projectId), eq(memberships.userId, userId)))
+    .where(and(
+      eq(projects.id, projectId),
+      eq(memberships.userId, userId),
+      isNull(projects.deletionRequestedAt),
+      isNull(projects.deletedAt)
+    ))
     .limit(1);
   if (!row || roleWeight[row.role] < roleWeight[minimum]) throw new AppError("FORBIDDEN", "Insufficient project permissions", 403);
   return row;

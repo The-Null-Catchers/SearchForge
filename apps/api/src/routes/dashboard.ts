@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
-import { and, avg, count, desc, eq, sql } from "drizzle-orm";
+import { and, avg, count, desc, eq, isNull, sql } from "drizzle-orm";
 import {
   documents,
   indexes,
@@ -34,7 +34,12 @@ async function ensureProjectAccess(db: Db, userId: string, projectId: string) {
     analyticsEnabled: projects.analyticsEnabled
   }).from(projects)
     .innerJoin(memberships, eq(memberships.organizationId, projects.organizationId))
-    .where(and(eq(projects.id, projectId), eq(memberships.userId, userId)))
+    .where(and(
+      eq(projects.id, projectId),
+      eq(memberships.userId, userId),
+      isNull(projects.deletionRequestedAt),
+      isNull(projects.deletedAt)
+    ))
     .limit(1);
   if (!row) throw new AppError("PROJECT_NOT_FOUND", "Project not found", 404);
   return row;
@@ -52,7 +57,11 @@ export async function dashboardRoutes(app: FastifyInstance, db: Db, auth: AuthSe
       updatedAt: projects.updatedAt
     }).from(projects)
       .innerJoin(memberships, eq(memberships.organizationId, projects.organizationId))
-      .where(eq(memberships.userId, claims.userId))
+      .where(and(
+        eq(memberships.userId, claims.userId),
+        isNull(projects.deletionRequestedAt),
+        isNull(projects.deletedAt)
+      ))
       .orderBy(desc(projects.updatedAt));
     return { projects: rows };
   });

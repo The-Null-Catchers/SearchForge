@@ -141,6 +141,9 @@ export async function buildServer() {
       });
     }
     const cause = (error instanceof Error ? error.cause : undefined) as { code?: string; message?: string } | undefined;
+    if (cause?.code === "55000" && cause.message === "SearchForge project unavailable") {
+      return reply.code(409).send({ error: { code: "PROJECT_UNAVAILABLE", message: "Project is being deleted", requestId: request.id } });
+    }
     if (error instanceof SourceUnavailable || (cause?.code === "55000" && cause.message === "SearchForge source unavailable")) {
       return reply.code(409).send({ error: { code: "SOURCE_UNAVAILABLE", message: "Source is being deleted", requestId: request.id } });
     }
