@@ -26,7 +26,9 @@ CREATE TRIGGER sources_live_project BEFORE INSERT ON sources
   FOR EACH ROW EXECUTE FUNCTION searchforge_live_project_write();
 CREATE TRIGGER api_keys_live_project BEFORE INSERT ON api_keys
   FOR EACH ROW EXECUTE FUNCTION searchforge_live_project_write();
-CREATE TRIGGER jobs_live_project BEFORE INSERT ON jobs
+-- PostgreSQL fires same-kind triggers alphabetically. Run after the existing
+-- index/source job fences so admission can keep index -> source -> project order.
+CREATE TRIGGER zz_jobs_live_project BEFORE INSERT ON jobs
   FOR EACH ROW EXECUTE FUNCTION searchforge_live_project_write();
 CREATE TRIGGER search_events_live_project BEFORE INSERT ON search_events
   FOR EACH ROW EXECUTE FUNCTION searchforge_live_project_write();
