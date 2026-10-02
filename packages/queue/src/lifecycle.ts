@@ -81,6 +81,23 @@ export class JobDispatcher {
     });
   }
 
+  async purgeTerminalOutbox(now = new Date(), retentionMs = 7 * 24 * 60 * 60 * 1000, limit = 250) {
+    if (!Number.isFinite(retentionMs) || retentionMs < 0) throw new RangeError("retentionMs must be a non-negative finite number");
+    if (!Number.isInteger(limit) || limit < 1 || limit > 5000) throw new RangeError("limit must be an integer between 1 and 5000");
+    const cutoff = new Date(now.getTime() - retentionMs);
+    return this.db.transaction(async tx => {
+      const entries = await tx.select({ jobId: jobOutbox.jobId }).from(jobOutbox)
+        .innerJoin(jobs, eq(jobs.id, jobOutbox.jobId))
+        .where(and(isNotNull(jobOutbox.dispatchedAt), isNotNull(jobs.finishedAt),
+          inArray(jobs.state, ["completed", "failed", "cancelled"]), lte(jobs.finishedAt, cutoff)))
+        .orderBy(asc(jobs.finishedAt), asc(jobOutbox.jobId)).limit(limit)
+        .for("update", { skipLocked: true });
+      if (entries.length === 0) return 0;
+      await tx.delete(jobOutbox).where(inArray(jobOutbox.jobId, entries.map(entry => entry.jobId)));
+      return entries.length;
+    });
+  }
+
   async dispatch(limit = 25) {
     return this.db.transaction(async tx => {
       const entries = await tx.select().from(jobOutbox).where(isNull(jobOutbox.dispatchedAt))
