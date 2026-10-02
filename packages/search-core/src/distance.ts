@@ -47,3 +47,49 @@ export function lowerBound(values: string[], target: string): number {
   }
   return low;
 }
+
+export function deletionVariants(term: string, maxDistance: number): string[] {
+  const seen = new Set<string>([term]);
+  let frontier = new Set<string>([term]);
+
+  for (let distance = 0; distance < maxDistance; distance += 1) {
+    const next = new Set<string>();
+    for (const value of frontier) {
+      if (value.length <= 1) continue;
+      for (let index = 0; index < value.length; index += 1) {
+        const variant = value.slice(0, index) + value.slice(index + 1);
+        if (seen.has(variant)) continue;
+        seen.add(variant);
+        next.add(variant);
+      }
+    }
+    if (next.size === 0) break;
+    frontier = next;
+  }
+
+  return [...seen];
+}
+
+export function buildDeletionDictionary(
+  vocabulary: string[],
+  maxDistance: number
+): Record<string, string[]> {
+  const dictionary = new Map<string, string[]>();
+
+  for (const term of vocabulary) {
+    for (const variant of deletionVariants(term, maxDistance)) {
+      const values = dictionary.get(variant);
+      if (values) {
+        values.push(term);
+      } else {
+        dictionary.set(variant, [term]);
+      }
+    }
+  }
+
+  return Object.fromEntries(
+    [...dictionary.entries()]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([variant, terms]) => [variant, [...new Set(terms)].sort()])
+  );
+}
