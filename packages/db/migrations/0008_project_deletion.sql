@@ -6,7 +6,9 @@ CREATE FUNCTION searchforge_live_project_write() RETURNS trigger LANGUAGE plpgsq
 DECLARE deleting timestamptz;
 DECLARE deleted timestamptz;
 BEGIN
-  IF TG_TABLE_NAME = 'jobs' AND NEW.type = 'cleanup' THEN RETURN NEW; END IF;
+  IF TG_TABLE_NAME = 'jobs' THEN
+    IF NEW.type = 'cleanup' THEN RETURN NEW; END IF;
+  END IF;
   IF NEW.project_id IS NULL THEN RETURN NEW; END IF;
   SELECT deletion_requested_at, deleted_at INTO deleting, deleted
     FROM projects WHERE id = NEW.project_id FOR SHARE;
