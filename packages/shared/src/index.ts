@@ -45,16 +45,36 @@ export const indexSettingsSchema = z.object({
 });
 export type IndexSettings = z.infer<typeof indexSettingsSchema>;
 
+export type ScalarFilterValue = string | number | boolean;
+export type FilterCondition = {
+  op: "eq" | "neq" | "gt" | "gte" | "lt" | "lte" | "in" | "range";
+  value: ScalarFilterValue | ScalarFilterValue[] | {
+    min?: number | string | undefined;
+    max?: number | string | undefined;
+  };
+};
+export type FlatFilters = Record<string, ScalarFilterValue | FilterCondition>;
+export type FilterExpression = FlatFilters | { and: FilterExpression[] } | { or: FilterExpression[] };
+
 const scalarFilterValue = z.union([z.string(), z.number(), z.boolean()]);
-export const filterConditionSchema = z.object({
+const rangeBoundary = z.union([z.number(), z.string()]);
+export const filterConditionSchema: z.ZodType<FilterCondition> = z.object({
   op: z.enum(["eq", "neq", "gt", "gte", "lt", "lte", "in", "range"]),
   value: z.union([
     scalarFilterValue,
     z.array(scalarFilterValue),
-    z.object({ min: z.number().optional(), max: z.number().optional() })
+    z.object({ min: rangeBoundary.optional(), max: rangeBoundary.optional() })
   ])
 });
-export const filtersSchema = z.record(z.string(), z.union([scalarFilterValue, filterConditionSchema]));
+const flatFiltersSchema: z.ZodType<FlatFilters> = z.record(
+  z.string(),
+  z.union([scalarFilterValue, filterConditionSchema])
+);
+export const filtersSchema: z.ZodType<FilterExpression> = z.lazy(() => z.union([
+  flatFiltersSchema,
+  z.object({ and: z.array(filtersSchema).min(1).max(50) }).strict(),
+  z.object({ or: z.array(filtersSchema).min(1).max(50) }).strict()
+]));
 
 export const searchRequestSchema = z.object({
   query: z.string().max(1000).default(""),

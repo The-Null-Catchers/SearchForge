@@ -105,6 +105,30 @@ export class Analyzer {
     return tokens;
   }
 
+  analyzeWithOffsets(input: string): Array<AnalyzerToken & { start: number; end: number }> {
+    const tokens: Array<AnalyzerToken & { start: number; end: number }> = [];
+    const surfaces = input.matchAll(/[\p{L}\p{N}\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06ED\u0640]+/gu);
+    let position = 0;
+
+    for (const match of surfaces) {
+      const surface = match[0];
+      const analyzed = this.analyze(surface);
+      const start = match.index ?? 0;
+      for (const token of analyzed) {
+        tokens.push({
+          ...token,
+          position,
+          original: surface,
+          start,
+          end: start + surface.length
+        });
+      }
+      position += 1;
+    }
+
+    return tokens;
+  }
+
   analyzeQueryTerm(input: string): string[] {
     return this.analyze(input).map((token) => token.term);
   }
