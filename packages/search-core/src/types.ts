@@ -43,6 +43,7 @@ export type Segment = {
   documentLengths: Record<string, Record<string, number>>;
   averageFieldLength: Record<string, number>;
   vocabulary: string[];
+  typoDeletes?: Record<string, string[]>;
   checksum?: string;
 };
 
