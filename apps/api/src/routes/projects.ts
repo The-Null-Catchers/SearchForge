@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { FastifyInstance, FastifyRequest } from "fastify";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { auditLogs, indexes, memberships, organizations, projects, type createDatabase } from "@searchforge/db";
+import { enqueueIndex } from "@searchforge/queue";
 import { AppError, indexSettingsSchema } from "@searchforge/shared";
 import { z } from "zod";
 import type { AuthService } from "../auth.js";
@@ -102,6 +103,96 @@ export async function projectRoutes(app: FastifyInstance, db: Db, auth: AuthServ
       index: { id: indexId, slug: "docs" },
       searchKey: searchKey.key,
       adminKey: adminKey.key
+    });
+  });
+
+  app.get("/v1/projects/:projectId/settings", async (request) => {
+    const claims = await auth.verifyAccess(bearer(request));
+    const { projectId } = z.object({ projectId: z.string().uuid() }).parse(request.params);
+    const [project] = await db.select().from(projects)
+      .where(and(eq(projects.id, projectId), isNull(projects.deletionRequestedAt), isNull(projects.deletedAt)))
+      .limit(1);
+    if (!project) throw new AppError("PROJECT_NOT_FOUND", "Project not found", 404);
+    const membership = await requireRole(db, claims.userId, project.organizationId, "viewer");
+    return {
+      id: project.id,
+      name: project.name,
+      slug: project.slug,
+      description: project.description ?? "",
+      defaultLanguage: project.defaultLanguage,
+      supportedLanguages: project.supportedLanguages,
+      analyticsEnabled: project.analyticsEnabled,
+      role: membership.role
+    };
+  });
+
+  app.put("/v1/projects/:projectId/settings", async (request) => {
+    const claims = await auth.verifyAccess(bearer(request));
+    const { projectId } = z.object({ projectId: z.string().uuid() }).parse(request.params);
+    const body = z.object({
+      name: z.string().min(2).max(140),
+      description: z.string().max(2000).default(""),
+      defaultLanguage: z.enum(["en", "ar", "auto"]),
+      supportedLanguages: z.array(z.enum(["en", "ar"])).min(1).max(2),
+      analyticsEnabled: z.boolean()
+    }).strict().parse(request.body);
+    const [project] = await db.select().from(projects)
+      .where(and(eq(projects.id, projectId), isNull(projects.deletionRequestedAt), isNull(projects.deletedAt)))
+      .limit(1);
+    if (!project) throw new AppError("PROJECT_NOT_FOUND", "Project not found", 404);
+    await requireRole(db, claims.userId, project.organizationId, "admin");
+
+    return db.transaction(async tx => {
+      const [current] = await tx.select().from(projects).where(eq(projects.id, projectId)).for("update");
+      if (!current || current.deletionRequestedAt || current.deletedAt) throw new AppError("PROJECT_NOT_FOUND", "Project not found", 404);
+      const [index] = await tx.select().from(indexes)
+        .where(and(eq(indexes.projectId, projectId), eq(indexes.slug, "docs"), isNull(indexes.deletionRequestedAt)))
+        .for("update").limit(1);
+      if (!index) throw new AppError("INDEX_NOT_FOUND", "Default docs index not found", 404);
+
+      const languagesChanged = current.defaultLanguage !== body.defaultLanguage
+        || JSON.stringify(current.supportedLanguages) !== JSON.stringify(body.supportedLanguages);
+      const nextIndexSettings = indexSettingsSchema.parse({
+        ...(current.indexSettings ?? {}),
+        ...(index.settings ?? {}),
+        defaultLanguage: body.defaultLanguage,
+        supportedLanguages: body.supportedLanguages
+      });
+
+      await tx.update(projects).set({
+        name: body.name,
+        description: body.description || null,
+        defaultLanguage: body.defaultLanguage,
+        supportedLanguages: body.supportedLanguages,
+        analyticsEnabled: body.analyticsEnabled,
+        indexSettings: nextIndexSettings,
+        updatedAt: new Date()
+      }).where(eq(projects.id, projectId));
+      await tx.update(indexes).set({ settings: nextIndexSettings, updatedAt: new Date() }).where(eq(indexes.id, index.id));
+
+      const rebuildJobId = languagesChanged ? await enqueueIndex(tx, projectId, index.id) : undefined;
+      await tx.insert(auditLogs).values({
+        organizationId: current.organizationId,
+        projectId,
+        actorUserId: claims.userId,
+        action: "project.settings_updated",
+        targetType: "project",
+        targetId: projectId,
+        requestId: request.id,
+        ip: request.ip,
+        metadata: {
+          previous: {
+            name: current.name,
+            description: current.description,
+            defaultLanguage: current.defaultLanguage,
+            supportedLanguages: current.supportedLanguages,
+            analyticsEnabled: current.analyticsEnabled
+          },
+          current: body,
+          rebuildJobId: rebuildJobId ?? null
+        }
+      });
+      return { ...body, rebuildJobId: rebuildJobId ?? null };
     });
   });
 }
