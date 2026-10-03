@@ -91,7 +91,7 @@ Disabling analytics stops new records; it does not erase historical records.
 
 - Crawl retries are implemented for transient page fetch failures; durable per-page
   deferred retries and operator retry/dead-letter controls remain follow-up work.
-- Outbox retention/recovery administration.
+- Dead-letter/recovery administration for terminal Redis failures; terminal outbox retention is implemented.
 - Complete ranking/settings/logs workflows,
   document field editing and privacy-aware analytics charts.
 - Key-specific/project quotas, expiration/IP configuration UI and notifications.

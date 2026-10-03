@@ -28,7 +28,11 @@ running tasks are excluded because replay after loss of their Redis lock require
 processor fencing. Cancelled, completed and failed tasks are never resurrected.
 An existing Redis record is left alone even if it reports failure: terminal-state
 reconciliation and dead-letter administration remain future work. Outbox rows
-must be retained until their durable job finishes; retention/archival is pending.
+are retained while jobs are queued/running, then terminal rows are eligible for
+bounded cleanup after the retention window. The worker purges at most 250 rows
+per pass every five minutes using PostgreSQL row locks with `SKIP LOCKED`, so
+multiple worker replicas can run the same maintenance safely. Set
+`OUTBOX_RETENTION_DAYS` to a value of at least 1; the default is 7 days.
 
 ## Schedules
 
