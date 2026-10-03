@@ -25,6 +25,7 @@ import { scheduleRoutes } from "./routes/schedules.js";
 import { deletionRoutes } from "./routes/deletion.js";
 import { JobCancelled, SourceUnavailable } from "@searchforge/queue";
 import { explorerRoutes } from "./routes/explorer.js";
+import { rankingRoutes } from "./routes/ranking.js";
 
 export async function buildServer() {
   const app = Fastify({
@@ -117,6 +118,7 @@ export async function buildServer() {
   await dashboardRoutes(app, db, auth);
   await scheduleRoutes(app, db, auth);
   await explorerRoutes(app, db, auth, runtime);
+  await rankingRoutes(app, db, auth);
   await deletionRoutes(app, db, auth);
 
   app.setErrorHandler((error, request, reply) => {
