@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
-import { and, avg, count, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, avg, count, desc, eq, gte, isNull, sql } from "drizzle-orm";
 import {
   documents,
   indexes,
@@ -7,6 +7,7 @@ import {
   jobs,
   memberships,
   projects,
+  searchClicks,
   searchEvents,
   sources,
   crawlSchedules,
@@ -17,6 +18,7 @@ import { z } from "zod";
 import type { AuthService } from "../auth.js";
 
 type Db = ReturnType<typeof createDatabase>["db"];
+const ANALYTICS_PRIVACY_THRESHOLD = 3;
 
 function bearer(request: FastifyRequest): string {
   const header = request.headers.authorization;
@@ -110,28 +112,73 @@ export async function dashboardRoutes(app: FastifyInstance, db: Db, auth: AuthSe
   app.get("/v1/projects/:projectId/analytics", async (request) => {
     const claims = await auth.verifyAccess(bearer(request));
     const { projectId } = z.object({ projectId: z.string().uuid() }).parse(request.params);
-    await ensureProjectAccess(db, claims.userId, projectId);
+    const { days } = z.object({ days: z.coerce.number().int().refine(value => [7, 30, 90].includes(value)).default(30) }).parse(request.query);
+    const project = await ensureProjectAccess(db, claims.userId, projectId);
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    const dayExpression = sql<string>`to_char(date_trunc('day', ${searchEvents.createdAt} at time zone 'UTC'), 'YYYY-MM-DD')`;
+    const clickDayExpression = sql<string>`to_char(date_trunc('day', ${searchClicks.createdAt} at time zone 'UTC'), 'YYYY-MM-DD')`;
 
-    const topQueries = await db.select({
-      query: searchEvents.query,
-      searches: count(),
-      averageLatencyMs: avg(searchEvents.latencyMs)
-    }).from(searchEvents)
-      .where(eq(searchEvents.projectId, projectId))
-      .groupBy(searchEvents.query)
-      .orderBy(desc(count()))
-      .limit(20);
+    const [searchSummary, zeroSummary, clickSummary, timelineRows, clickTimelineRows, topQueries, zeroResultQueries] = await Promise.all([
+      db.select({ searches: count(), averageLatencyMs: avg(searchEvents.latencyMs) }).from(searchEvents)
+        .where(and(eq(searchEvents.projectId, projectId), gte(searchEvents.createdAt, since))),
+      db.select({ zeroResults: count() }).from(searchEvents)
+        .where(and(eq(searchEvents.projectId, projectId), gte(searchEvents.createdAt, since), eq(searchEvents.resultCount, 0))),
+      db.select({ clicks: count() }).from(searchClicks)
+        .where(and(eq(searchClicks.projectId, projectId), gte(searchClicks.createdAt, since))),
+      db.select({
+        day: dayExpression,
+        searches: count(),
+        zeroResults: sql<number>`count(*) filter (where ${searchEvents.resultCount} = 0)`,
+        averageLatencyMs: avg(searchEvents.latencyMs)
+      }).from(searchEvents)
+        .where(and(eq(searchEvents.projectId, projectId), gte(searchEvents.createdAt, since)))
+        .groupBy(sql`date_trunc('day', ${searchEvents.createdAt} at time zone 'UTC')`)
+        .orderBy(sql`date_trunc('day', ${searchEvents.createdAt} at time zone 'UTC')`),
+      db.select({ day: clickDayExpression, clicks: count() }).from(searchClicks)
+        .where(and(eq(searchClicks.projectId, projectId), gte(searchClicks.createdAt, since)))
+        .groupBy(sql`date_trunc('day', ${searchClicks.createdAt} at time zone 'UTC')`)
+        .orderBy(sql`date_trunc('day', ${searchClicks.createdAt} at time zone 'UTC')`),
+      db.select({ query: searchEvents.query, searches: count(), averageLatencyMs: avg(searchEvents.latencyMs) }).from(searchEvents)
+        .where(and(eq(searchEvents.projectId, projectId), gte(searchEvents.createdAt, since)))
+        .groupBy(searchEvents.query)
+        .having(sql`count(*) >= ${ANALYTICS_PRIVACY_THRESHOLD}`)
+        .orderBy(desc(count()))
+        .limit(20),
+      db.select({ query: searchEvents.query, searches: count(), averageLatencyMs: avg(searchEvents.latencyMs) }).from(searchEvents)
+        .where(and(eq(searchEvents.projectId, projectId), gte(searchEvents.createdAt, since), eq(searchEvents.resultCount, 0)))
+        .groupBy(searchEvents.query)
+        .having(sql`count(*) >= ${ANALYTICS_PRIVACY_THRESHOLD}`)
+        .orderBy(desc(count()))
+        .limit(20)
+    ]);
 
-    const zeroResultQueries = await db.select({
-      query: searchEvents.query,
-      searches: count()
-    }).from(searchEvents)
-      .where(and(eq(searchEvents.projectId, projectId), eq(searchEvents.resultCount, 0)))
-      .groupBy(searchEvents.query)
-      .orderBy(desc(count()))
-      .limit(20);
+    const searches = Number(searchSummary[0]?.searches ?? 0);
+    const clicks = Number(clickSummary[0]?.clicks ?? 0);
+    const zeroResults = Number(zeroSummary[0]?.zeroResults ?? 0);
+    const clicksByDay = new Map(clickTimelineRows.map(row => [row.day, Number(row.clicks)]));
+    const timeline = timelineRows.map(row => ({
+      day: row.day,
+      searches: Number(row.searches),
+      clicks: clicksByDay.get(row.day) ?? 0,
+      zeroResultRate: Number(row.searches) === 0 ? 0 : Number(row.zeroResults) / Number(row.searches),
+      averageLatencyMs: Number(row.averageLatencyMs ?? 0)
+    }));
 
-    return { topQueries, zeroResultQueries };
+    return {
+      days,
+      analyticsEnabled: project.analyticsEnabled,
+      privacyThreshold: ANALYTICS_PRIVACY_THRESHOLD,
+      summary: {
+        searches,
+        clicks,
+        clickThroughRate: searches === 0 ? 0 : clicks / searches,
+        zeroResultRate: searches === 0 ? 0 : zeroResults / searches,
+        averageLatencyMs: Number(searchSummary[0]?.averageLatencyMs ?? 0)
+      },
+      timeline,
+      topQueries,
+      zeroResultQueries
+    };
   });
 
   app.get("/v1/projects/:projectId/resources", async (request) => {
