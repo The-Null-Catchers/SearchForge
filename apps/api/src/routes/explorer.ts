@@ -9,6 +9,8 @@ import type { SearchRuntime } from "../search-runtime.js";
 import { bearer, projectAccess } from "./management.js";
 
 type Db = ReturnType<typeof createDatabase>["db"];
+const editableDocumentSchema = z.record(z.string().min(1).max(200), z.unknown()).refine(value => Object.keys(value).length <= 200, "Document has too many fields");
+
 export async function explorerRoutes(app: FastifyInstance, db: Db, auth: AuthService, runtime: SearchRuntime) {
   async function access(request: Parameters<typeof bearer>[0], minimum: "viewer" | "developer") {
     const claims = await auth.verifyAccess(bearer(request));
@@ -78,6 +80,33 @@ export async function explorerRoutes(app: FastifyInstance, db: Db, auth: AuthSer
       return id;
     });
     return reply.code(202).send({ jobId });
+  });
+
+  app.put("/v1/console/indexes/:indexId/documents/:documentId", async (request, reply) => {
+    const { index, permission, claims } = await access(request, "developer");
+    const { documentId } = z.object({ documentId: z.string().min(1).max(200) }).parse(request.params);
+    const input = editableDocumentSchema.parse(request.body);
+    const body = { ...input, id: documentId } as Record<string, unknown>;
+    const serialized = JSON.stringify(body);
+    if (Buffer.byteLength(serialized) > 1_000_000) throw new AppError("VALIDATION_ERROR", "Document exceeds the 1 MB console edit limit", 413);
+
+    const result = await db.transaction(async tx => {
+      const [current] = await tx.select().from(documents)
+        .where(and(eq(documents.indexId, index.id), eq(documents.documentId, documentId), isNull(documents.deletedAt)))
+        .for("update");
+      if (!current) throw new AppError("DOCUMENT_NOT_FOUND", "Live document not found", 404);
+      const keys = new Set([...Object.keys(current.body), ...Object.keys(body)]);
+      const changedFields = [...keys].filter(key => JSON.stringify(current.body[key]) !== JSON.stringify(body[key])).slice(0, 200);
+      if (changedFields.length === 0) return { jobId: null, changedFields };
+      await tx.update(documents).set({ body, contentHash: null, updatedAt: new Date() })
+        .where(and(eq(documents.indexId, index.id), eq(documents.documentId, documentId)));
+      const jobId = await enqueueIndex(tx, index.projectId, index.id);
+      await tx.insert(auditLogs).values({ organizationId: permission.organizationId, projectId: index.projectId,
+        actorUserId: claims.userId, action: "document.updated", targetType: "document", targetId: documentId,
+        requestId: request.id, ip: request.ip, metadata: { indexId: index.id, jobId, changedFields } });
+      return { jobId, changedFields };
+    });
+    return reply.code(result.jobId ? 202 : 200).send({ documentId, ...result });
   });
 
   app.delete("/v1/console/indexes/:indexId/documents/:documentId", async (request, reply) => {

@@ -101,10 +101,25 @@ export function useIndexExplorer(projectId: string | null) {
     } catch (err) { if (scope === activeScope.current) setError(err instanceof Error ? err.message : "Unable to inspect document"); }
     finally { if (scope === activeScope.current && sequence === inspection.current) setBusy(false); }
   }, [indexId]);
+  const save = async (documentId: string, body: Record<string, unknown>) => {
+    const scope = activeScope.current;
+    setBusy(true); setError("");
+    try {
+      const result = await api<{ jobId: string | null }>(`/v1/console/indexes/${indexId}/documents/${encodeURIComponent(documentId)}`, {
+        method: "PUT", body: JSON.stringify(body)
+      });
+      if (scope !== activeScope.current) return false;
+      if (result.jobId) setJob({ id: result.jobId, state: "queued", phase: "queued", progress: {} });
+      await inspect(documentId);
+      setRevision(value => value + 1);
+      return true;
+    } catch (err) { if (scope === activeScope.current) setError(err instanceof Error ? err.message : "Document update failed"); return false; }
+    finally { if (scope === activeScope.current) setBusy(false); }
+  };
   return { indexes, indexId, versions, page, detail, job, loading, busy, error, status,
     selectIndex: (id: string) => { setIndexId(id); setAfter(""); setDetail(null); setJob(null); setBusy(false); },
     filter: (query: string, nextStatus: string) => { setQ(query); setStatus(nextStatus); setAfter(""); },
-    next: () => setAfter(page.nextAfter ?? ""), first: () => setAfter(""), inspect,
+    next: () => setAfter(page.nextAfter ?? ""), first: () => setAfter(""), inspect, save,
     rebuild: () => run(`/v1/console/indexes/${indexId}/rebuild`, "POST", true),
     remove: (id: string) => run(`/v1/console/indexes/${indexId}/documents/${encodeURIComponent(id)}`, "DELETE", true),
     deleteIndex,
