@@ -57,10 +57,11 @@ See docs/job-lifecycle.md for delivery semantics and cancellation boundaries.
 - Stored-versus-active state, positional terms and safe document previews.
 - Confirmed deletion and asynchronous audited rebuilds.
 - Editable crawl rules, crawl-page filters and query-bound keyset pagination.
-- Viewer/developer permissions, bounded URL/rule validation and safe links.
+- Durable developer document field editing with immutable-segment rebuilds.
+- Viewer/developer permissions, bounded URL/rule/document validation and safe links.
 - 37 local unit tests plus additional integration regression scenarios.
 
-See docs/explorers.md. Integration/container CI verifies the expanded workflow.
+See docs/explorers.md and docs/document-editing.md. Integration/container CI verifies the expanded workflow.
 Browser E2E remains separate release work.
 
 ## Analytics correctness
@@ -70,8 +71,10 @@ Clicks referencing search events must belong to the authenticated project and
 match the event query. Search/explain share enabled synonyms; explain ignores
 pagination so it can inspect a matching document outside the requested page.
 The analytics dashboard exposes loading/errors/retry and rejects stale responses
-after project changes. Regression coverage is in the PostgreSQL integration suite.
-Disabling analytics stops new records; it does not erase historical records.
+after project changes. Daily search/click/zero-result/latency charts use aggregate
+UTC buckets, while query text is suppressed until the exact query reaches the
+configured privacy threshold in the selected reporting window. Disabling analytics
+stops new records; it does not erase historical records.
 
 ## Recent search-core completion
 
@@ -92,8 +95,6 @@ Disabling analytics stops new records; it does not erase historical records.
 - Crawl retries are implemented for transient page fetch failures; durable per-page
   deferred retries and operator retry/dead-letter controls remain follow-up work.
 - Dead-letter/recovery administration for terminal Redis failures; terminal outbox retention is implemented.
-- Complete ranking/settings/logs workflows,
-  document field editing and privacy-aware analytics charts.
 - Key-specific/project quotas, expiration/IP configuration UI and notifications.
 - Full tenant/synonym/analytics seeding, embeddable UI, backup scripts, OpenTelemetry, browser E2E,
   load tests with actual measured results, VPS restore rehearsal.
