@@ -36,7 +36,7 @@ verification. All container images built successfully in CI, including the pinne
 source build. Explicit IPv4 loopback health probes fixed the Compose startup failure.
 CI run 36715821234 passed all four jobs: Node build/unit/types/integration, Dart,
 security baseline and full container smoke. Caddy routed API readiness and the
-login page successfully. Browser E2E remains release work.
+login page successfully. Real Chromium dashboard smoke coverage is now included in container CI.
 
 ## Job lifecycle additions
 
@@ -62,7 +62,6 @@ See docs/job-lifecycle.md for delivery semantics and cancellation boundaries.
 - 37 local unit tests plus additional integration regression scenarios.
 
 See docs/explorers.md and docs/document-editing.md. Integration/container CI verifies the expanded workflow.
-Browser E2E remains separate release work.
 
 ## Analytics correctness
 
@@ -127,6 +126,16 @@ See docs/backup-restore.md. A measured VPS restore rehearsal is still release ev
 
 See docs/observability.md.
 
+## Browser release smoke
+
+- A real Chromium flow runs against the built Docker Compose stack through Caddy.
+- CI seeds deterministic demo tenants and signs in through the actual browser form.
+- Dashboard overview, tenant project loading, theme switching, keyboard command palette, Analytics navigation, and authenticated reload are checked.
+- Unexpected page exceptions fail the job.
+- Success/failure screenshots and JSON results are uploaded as short-retention CI artifacts.
+
+See docs/browser-e2e.md.
+
 ## Recent search-core completion
 
 - Compound AND/OR filter expressions with backward-compatible flat filters.
@@ -147,7 +156,7 @@ See docs/observability.md.
   deferred retries and operator retry/dead-letter controls remain follow-up work.
 - Dead-letter/recovery administration for terminal Redis failures; terminal outbox retention is implemented.
 - External quota/expiration notification delivery remains; in-product warnings are implemented.
-- Browser E2E, load tests with actual measured results, and VPS restore rehearsal remain release work.
+- Load tests with actual measured results and VPS restore rehearsal remain release work.
 
 No performance numbers are claimed without a measured corpus and hardware profile.
 
