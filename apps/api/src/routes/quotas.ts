@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { and, count, eq, isNull, sql } from "drizzle-orm";
+import { and, count, eq, isNull } from "drizzle-orm";
 import { auditLogs, documents, indexes, projectQuotas, usageCounters, type createDatabase } from "@searchforge/db";
 import { z } from "zod";
 import type { AuthService } from "../auth.js";
@@ -35,7 +35,7 @@ export async function quotaRoutes(app: FastifyInstance, db: Db, auth: AuthServic
   app.get("/v1/projects/:projectId/quotas", async request => {
     const claims = await auth.verifyAccess(bearer(request));
     const { projectId } = z.object({ projectId: z.string().uuid() }).parse(request.params);
-    await projectAccess(db, claims.userId, projectId, "viewer");
+    const access = await projectAccess(db, claims.userId, projectId, "viewer");
 
     const period = monthPeriod();
     const [[quota], [usage], [documentCount]] = await Promise.all([
@@ -69,7 +69,7 @@ export async function quotaRoutes(app: FastifyInstance, db: Db, auth: AuthServic
       .filter(([, value]) => value.state === "warning" || value.state === "exceeded")
       .map(([metric, value]) => ({ metric, state: value.state, percent: value.percent, used: value.used, limit: value.limit }));
 
-    return { period, limits, current, metrics, notifications };
+    return { period, role: access.role, limits, current, metrics, notifications };
   });
 
   app.put("/v1/projects/:projectId/quotas", async request => {
