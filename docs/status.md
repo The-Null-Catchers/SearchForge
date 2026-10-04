@@ -76,14 +76,26 @@ UTC buckets, while query text is suppressed until the exact query reaches the
 configured privacy threshold in the selected reporting window. Disabling analytics
 stops new records; it does not erase historical records.
 
-## API key controls
+## API key and quota controls
 
 - Admin-managed expiration timestamps and exact IPv4/IPv6 allowlists.
 - Redis-backed per-key requests-per-minute enforcement in addition to the global API limiter.
-- Dashboard creation/editing workflows with active, expiring-soon, expired and revoked status warnings.
+- Project monthly API/search/crawl quotas and max-document admission controls.
+- PostgreSQL serialization prevents concurrent API writers or crawler workers from oversubscribing configured limits.
+- Dashboard usage warnings and API-key active/expiring/expired/revoked states are available in-product.
 - Control changes are audited without persisting or disclosing raw secrets.
 
-See docs/api-key-controls.md for authentication order and privacy boundaries.
+See docs/api-key-controls.md and docs/project-quotas.md for enforcement and privacy boundaries.
+
+## Demo seeding
+
+- Idempotent local demo seeding creates two isolated organizations and projects.
+- Seeded roles exercise owner/developer/viewer tenant boundaries.
+- English and Arabic synonym sets are included.
+- Analytics includes repeated queries, clicks, zero-result searches, latency variation and a low-frequency query below the disclosure threshold.
+- Production execution is blocked unless explicitly opted in.
+
+See docs/demo-seed.md.
 
 ## Recent search-core completion
 
@@ -104,9 +116,8 @@ See docs/api-key-controls.md for authentication order and privacy boundaries.
 - Crawl retries are implemented for transient page fetch failures; durable per-page
   deferred retries and operator retry/dead-letter controls remain follow-up work.
 - Dead-letter/recovery administration for terminal Redis failures; terminal outbox retention is implemented.
-- Project-wide usage quotas and external quota/expiration notification delivery remain; key-specific expiration,
-  IP restrictions, per-key rate limits, and in-product expiration warnings are implemented.
-- Full tenant/synonym/analytics seeding, embeddable UI, backup scripts, OpenTelemetry, browser E2E,
+- External quota/expiration notification delivery remains; in-product warnings are implemented.
+- Embeddable UI, backup scripts, OpenTelemetry, browser E2E,
   load tests with actual measured results, VPS restore rehearsal.
 
 No performance numbers are claimed without a measured corpus and hardware profile.
