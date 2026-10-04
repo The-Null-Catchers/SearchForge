@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { FastifyInstance, FastifyRequest } from "fastify";
-import { and, eq, sql } from "drizzle-orm";
-import { documents, indexes, type createDatabase } from "@searchforge/db";
+import { and, count, eq, inArray, isNull, sql } from "drizzle-orm";
+import { documents, indexes, projectQuotas, type createDatabase } from "@searchforge/db";
 import { AppError } from "@searchforge/shared";
 import { z } from "zod";
 import { enqueueIndex } from "@searchforge/queue";
@@ -32,6 +32,30 @@ function hashDocument(document: Record<string, unknown>): string {
   return createHash("sha256").update(JSON.stringify(document)).digest("hex");
 }
 
+async function enforceDocumentQuota(
+  tx: Parameters<Parameters<Db["transaction"]>[0]>[0],
+  projectId: string,
+  additions: number
+) {
+  if (additions <= 0) return;
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`quota-documents:${projectId}`}, 0))`);
+  const [quota] = await tx.select({ maxDocuments: projectQuotas.maxDocuments })
+    .from(projectQuotas).where(eq(projectQuotas.projectId, projectId)).limit(1);
+  if (quota?.maxDocuments === null || quota?.maxDocuments === undefined) return;
+  const [current] = await tx.select({ value: count() }).from(documents)
+    .innerJoin(indexes, eq(indexes.id, documents.indexId))
+    .where(and(eq(indexes.projectId, projectId), isNull(indexes.deletionRequestedAt), isNull(documents.deletedAt)));
+  const used = Number(current?.value ?? 0);
+  if (used + additions > quota.maxDocuments) {
+    throw new AppError("RATE_LIMITED", "Project document quota exceeded", 429, {
+      metric: "documents",
+      used,
+      requested: additions,
+      limit: quota.maxDocuments
+    });
+  }
+}
+
 export async function documentRoutes(app: FastifyInstance, db: Db, keys: ApiKeyService) {
   app.put("/v1/indexes/:indexSlug/documents/:documentId", async (request, reply) => {
     const auth = await keys.authenticate(token(request), ["indexing", "admin"], request.ip);
@@ -39,6 +63,9 @@ export async function documentRoutes(app: FastifyInstance, db: Db, keys: ApiKeyS
     const index = await resolveIndex(db, auth.projectId, params.indexSlug);
     const document = normalizedBody(params.documentId, request.body);
     const jobId = await db.transaction(async tx => {
+      const [existing] = await tx.select({ id: documents.documentId }).from(documents)
+        .where(and(eq(documents.indexId, index.id), eq(documents.documentId, params.documentId), isNull(documents.deletedAt))).limit(1);
+      await enforceDocumentQuota(tx, auth.projectId, existing ? 0 : 1);
       await tx.insert(documents).values({
         indexId: index.id,
         documentId: params.documentId,
@@ -53,8 +80,8 @@ export async function documentRoutes(app: FastifyInstance, db: Db, keys: ApiKeyS
           deletedAt: null,
           updatedAt: new Date()
         }
-    });
-    return enqueueIndex(tx, auth.projectId, index.id);
+      });
+      return enqueueIndex(tx, auth.projectId, index.id);
     });
     return reply.code(202).send({ documentId: params.documentId, jobId });
   });
@@ -64,6 +91,7 @@ export async function documentRoutes(app: FastifyInstance, db: Db, keys: ApiKeyS
     const { indexSlug } = z.object({ indexSlug: z.string() }).parse(request.params);
     const body = z.object({
       documents: z.array(z.record(z.string(), z.unknown()).and(z.object({ id: z.string().min(1).max(200) }))).min(1).max(5000)
+        .refine(items => new Set(items.map(item => item.id)).size === items.length, "Document ids must be unique within a batch")
     }).parse(request.body);
     const index = await resolveIndex(db, auth.projectId, indexSlug);
     const values = body.documents.map((document) => ({
@@ -73,6 +101,10 @@ export async function documentRoutes(app: FastifyInstance, db: Db, keys: ApiKeyS
       contentHash: hashDocument(document)
     }));
     const jobId = await db.transaction(async tx => {
+      const ids = values.map(value => value.documentId);
+      const existing = await tx.select({ id: documents.documentId }).from(documents)
+        .where(and(eq(documents.indexId, index.id), inArray(documents.documentId, ids), isNull(documents.deletedAt)));
+      await enforceDocumentQuota(tx, auth.projectId, values.length - existing.length);
       await tx.insert(documents).values(values).onConflictDoUpdate({
         target: [documents.indexId, documents.documentId],
         set: {
@@ -82,8 +114,8 @@ export async function documentRoutes(app: FastifyInstance, db: Db, keys: ApiKeyS
           deletedAt: null,
           updatedAt: new Date()
         }
-    });
-    return enqueueIndex(tx, auth.projectId, index.id);
+      });
+      return enqueueIndex(tx, auth.projectId, index.id);
     });
     return reply.code(202).send({ accepted: values.length, jobId });
   });
