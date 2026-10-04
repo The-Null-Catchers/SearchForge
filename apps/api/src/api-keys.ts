@@ -1,6 +1,6 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
-import { and, eq, isNull } from "drizzle-orm";
-import { apiKeys, projects, type createDatabase } from "@searchforge/db";
+import { and, eq, isNull, sql } from "drizzle-orm";
+import { apiKeys, projectQuotas, projects, usageCounters, type createDatabase } from "@searchforge/db";
 import { AppError } from "@searchforge/shared";
 import type { Redis as IORedis } from "ioredis";
 import type { Config } from "./config.js";
@@ -55,6 +55,42 @@ export class ApiKeyService {
     }
   }
 
+  private monthPeriod() {
+    return new Date().toISOString().slice(0, 7);
+  }
+
+  private async consumeApiRequest(projectId: string) {
+    await this.db.transaction(async tx => {
+      const [quota] = await tx.select({ limit: projectQuotas.monthlyApiRequests })
+        .from(projectQuotas).where(eq(projectQuotas.projectId, projectId)).for("share");
+      const [usage] = await tx.insert(usageCounters).values({ projectId, period: this.monthPeriod(), apiRequests: 1 })
+        .onConflictDoUpdate({
+          target: [usageCounters.projectId, usageCounters.period],
+          set: { apiRequests: sql`${usageCounters.apiRequests} + 1` }
+        }).returning({ value: usageCounters.apiRequests });
+      const value = Number(usage?.value ?? 0);
+      if (quota?.limit !== null && quota?.limit !== undefined && value > quota.limit) {
+        throw new AppError("RATE_LIMITED", "Project monthly API request quota exceeded", 429, { metric: "apiRequests", limit: quota.limit });
+      }
+    });
+  }
+
+  async consumeSearch(projectId: string) {
+    await this.db.transaction(async tx => {
+      const [quota] = await tx.select({ limit: projectQuotas.monthlySearches })
+        .from(projectQuotas).where(eq(projectQuotas.projectId, projectId)).for("share");
+      const [usage] = await tx.insert(usageCounters).values({ projectId, period: this.monthPeriod(), searches: 1 })
+        .onConflictDoUpdate({
+          target: [usageCounters.projectId, usageCounters.period],
+          set: { searches: sql`${usageCounters.searches} + 1` }
+        }).returning({ value: usageCounters.searches });
+      const value = Number(usage?.value ?? 0);
+      if (quota?.limit !== null && quota?.limit !== undefined && value > quota.limit) {
+        throw new AppError("RATE_LIMITED", "Project monthly search quota exceeded", 429, { metric: "searches", limit: quota.limit });
+      }
+    });
+  }
+
   async authenticate(raw: string, allowed: KeyKind[], ip?: string) {
     const match = /^sf_(search|indexing|admin)_([A-Za-z0-9_-]{12})_([A-Za-z0-9_-]+)$/.exec(raw);
     if (!match) throw new AppError("UNAUTHENTICATED", "Invalid API key", 401);
@@ -86,6 +122,7 @@ export class ApiKeyService {
     }
 
     await this.enforceRateLimit(record.key.id, record.key.rateLimitPerMinute);
+    await this.consumeApiRequest(record.key.projectId);
     void this.db.update(apiKeys).set({ lastUsedAt: new Date() }).where(eq(apiKeys.id, record.key.id));
     return {
       id: record.key.id,
