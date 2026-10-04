@@ -99,13 +99,33 @@ See docs/demo-seed.md.
 
 ## Embeddable search UI
 
-- Framework-independent `@searchforge/ui-kit` web component backed by the JavaScript SDK.
+- Framework-independent static browser embed served from the web application.
 - Debounced autocomplete with keyboard navigation and accessible listbox semantics.
 - Safe text-only result rendering, HTTP(S)-only result links, and best-effort click analytics.
 - Automatic Arabic/English direction switching plus CSS custom-property theming.
 - Browser integration explicitly rejects embedded admin/indexing keys and requires search-scoped keys.
 
 See docs/embeddable-search.md.
+
+## Backup and recovery tooling
+
+- Consistent snapshots cover PostgreSQL, immutable index data, and MinIO object storage.
+- Writers are quiesced during backup and only previously-running services are restarted.
+- Backup sets include manifests and SHA-256 checksums.
+- Restore rehearsal uses isolated PostgreSQL/container volumes and does not overwrite production data.
+- Redis is intentionally excluded because durable queue/outbox state is authoritative in PostgreSQL.
+
+See docs/backup-restore.md. A measured VPS restore rehearsal is still release evidence work.
+
+## OpenTelemetry tracing
+
+- API requests emit sampled OTLP/HTTP server spans when tracing is configured.
+- Valid W3C `traceparent` headers preserve upstream trace IDs and sampling decisions.
+- Trace attributes are privacy-bounded and exclude queries, bodies, credentials, user IDs, document bodies, and IP addresses.
+- Export is asynchronous, bounded, timeout-controlled, and fails open so collector outages do not block requests.
+- The observability Compose profile includes a pinned OpenTelemetry Collector with OTLP gRPC/HTTP receivers.
+
+See docs/observability.md.
 
 ## Recent search-core completion
 
@@ -127,8 +147,7 @@ See docs/embeddable-search.md.
   deferred retries and operator retry/dead-letter controls remain follow-up work.
 - Dead-letter/recovery administration for terminal Redis failures; terminal outbox retention is implemented.
 - External quota/expiration notification delivery remains; in-product warnings are implemented.
-- Backup scripts, OpenTelemetry, browser E2E, load tests with actual measured results,
-  VPS restore rehearsal.
+- Browser E2E, load tests with actual measured results, and VPS restore rehearsal remain release work.
 
 No performance numbers are claimed without a measured corpus and hardware profile.
 
