@@ -1,28 +1,32 @@
 # Embeddable search UI
 
-SearchForge ships a framework-independent web component in `@searchforge/ui-kit`. It uses the JavaScript SDK, Shadow DOM isolation, autocomplete, accessible keyboard navigation, result rendering, click analytics, and automatic Arabic/English direction handling.
+SearchForge ships a framework-independent browser embed at `/searchforge-embed.js` from the web application. It uses a Shadow DOM custom element with autocomplete, accessible keyboard navigation, result rendering, click analytics, and automatic Arabic/English direction handling. The embed is intentionally dependency-free so adding it does not change the application workspace dependency graph or lockfile.
 
 ## Browser key safety
 
-Use only a **search-scoped** API key in browser code. Search keys are intentionally client-visible credentials and should still have expiration, IP restrictions where practical, and a conservative per-key rate limit. The widget refuses `sf_admin_*` and `sf_indexing_*` keys. Never embed an admin or indexing key.
+Use only a **search-scoped** API key in browser code. Search keys are intentionally client-visible credentials and should still have expiration, IP restrictions where practical, and a conservative per-key rate limit. The widget accepts only keys beginning with `sf_search_`; admin and indexing keys are rejected. Never embed an admin or indexing key.
 
 ## Mounting
 
-```ts
-import { mountSearchWidget } from "@searchforge/ui-kit";
+Load the script from the SearchForge web host and mount it into any element:
 
-const search = mountSearchWidget({
-  target: "#site-search",
-  baseUrl: "https://search.example.com",
-  projectId: "YOUR_PROJECT_ID",
-  apiKey: "sf_search_...",
-  indexSlug: "docs",
-  placeholder: "Search docs / ابحث في التوثيق",
-  direction: "auto",
-  limit: 10
-});
+```html
+<div id="site-search"></div>
+<script src="https://search.example.com/searchforge-embed.js"></script>
+<script>
+  const search = SearchForgeEmbed.mount({
+    target: "#site-search",
+    baseUrl: "https://api.search.example.com",
+    projectId: "YOUR_PROJECT_ID",
+    apiKey: "sf_search_...",
+    indexSlug: "docs",
+    placeholder: "Search docs / ابحث في التوثيق",
+    direction: "auto",
+    limit: 10
+  });
 
-search.focus();
+  search.focus();
+</script>
 ```
 
 The returned handle exposes `search(query)`, `focus()`, and `destroy()`.
