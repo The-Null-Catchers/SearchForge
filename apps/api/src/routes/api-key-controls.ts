@@ -1,3 +1,4 @@
+import { isIP } from "node:net";
 import type { FastifyInstance } from "fastify";
 import { and, desc, eq } from "drizzle-orm";
 import { apiKeys, auditLogs, type createDatabase } from "@searchforge/db";
@@ -8,10 +9,11 @@ import type { AuthService } from "../auth.js";
 import { bearer, projectAccess } from "./management.js";
 
 type Db = ReturnType<typeof createDatabase>["db"];
+const ipAddressSchema = z.string().refine(value => isIP(value) !== 0, "Use a valid IPv4 or IPv6 address");
 
 const controlsSchema = z.object({
   expiresAt: z.string().datetime({ offset: true }).nullable().optional(),
-  ipRestrictions: z.array(z.string().ip()).max(20).default([]),
+  ipRestrictions: z.array(ipAddressSchema).max(20).default([]),
   rateLimitPerMinute: z.number().int().min(1).max(10_000).nullable().optional()
 });
 
@@ -50,7 +52,7 @@ export async function apiKeyControlRoutes(app: FastifyInstance, db: Db, auth: Au
       kind: z.enum(["search", "indexing", "admin"]),
       name: z.string().min(1).max(120),
       expiresAt: z.string().datetime({ offset: true }).nullable().optional(),
-      ipRestrictions: z.array(z.string().ip()).max(20).default([]),
+      ipRestrictions: z.array(ipAddressSchema).max(20).default([]),
       rateLimitPerMinute: z.number().int().min(1).max(10_000).nullable().optional()
     }).strict().parse(request.body);
     const expiresAt = parseExpiry(body.expiresAt);
@@ -86,7 +88,7 @@ export async function apiKeyControlRoutes(app: FastifyInstance, db: Db, auth: Au
     const expiresAt = parseExpiry(body.expiresAt);
     return db.transaction(async tx => {
       const [current] = await tx.select().from(apiKeys).where(and(eq(apiKeys.id, params.keyId), eq(apiKeys.projectId, params.projectId))).for("update");
-      if (!current) throw new AppError("API_KEY_NOT_FOUND", "API key not found", 404);
+      if (!current) throw new AppError("VALIDATION_ERROR", "API key not found", 404);
       if (current.revokedAt) throw new AppError("VALIDATION_ERROR", "Revoked API keys cannot be changed", 409);
       const [updated] = await tx.update(apiKeys).set({
         expiresAt,
