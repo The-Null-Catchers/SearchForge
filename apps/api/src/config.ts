@@ -13,7 +13,12 @@ const schema = z.object({
   INDEX_STORAGE_PATH: z.string().default("./storage/indexes"),
   PUBLIC_WEB_URL: z.string().url().default("http://localhost:3000"),
   SMTP_URL: z.preprocess((value) => value === "" ? undefined : value, z.string().min(1).optional()),
-  MAIL_FROM: z.string().default("SearchForge <no-reply@localhost>")
+  MAIL_FROM: z.string().default("SearchForge <no-reply@localhost>"),
+  OTEL_EXPORTER_OTLP_ENDPOINT: z.preprocess((value) => value === "" ? undefined : value, z.string().url().optional()),
+  OTEL_SERVICE_NAME: z.string().min(1).max(128).default("searchforge-api"),
+  OTEL_TRACE_SAMPLE_RATIO: z.coerce.number().min(0).max(1).default(0.1),
+  OTEL_EXPORT_TIMEOUT_MS: z.coerce.number().int().min(100).max(30_000).default(2_000),
+  GIT_SHA: z.string().max(128).optional()
 });
 
 export type Config = z.infer<typeof schema>;

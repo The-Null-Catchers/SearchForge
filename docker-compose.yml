@@ -17,6 +17,11 @@ x-app-env: &app-env
   PUBLIC_WEB_URL: ${PUBLIC_WEB_URL:-http://localhost:3000}
   SMTP_URL: ${SMTP_URL:-}
   MAIL_FROM: ${MAIL_FROM:-SearchForge <no-reply@localhost>}
+  OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+  OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME:-searchforge-api}
+  OTEL_TRACE_SAMPLE_RATIO: ${OTEL_TRACE_SAMPLE_RATIO:-0.1}
+  OTEL_EXPORT_TIMEOUT_MS: ${OTEL_EXPORT_TIMEOUT_MS:-2000}
+  GIT_SHA: ${GIT_SHA:-}
 
 services:
   postgres:
@@ -172,6 +177,17 @@ services:
     image: prom/prometheus:latest
     volumes:
       - ./infra/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+
+  otel-collector:
+    restart: unless-stopped
+    profiles: ["observability"]
+    image: otel/opentelemetry-collector-contrib:0.136.0
+    command: ["--config=/etc/otelcol-contrib/config.yml"]
+    volumes:
+      - ./infra/monitoring/otel-collector.yml:/etc/otelcol-contrib/config.yml:ro
+    ports:
+      - "127.0.0.1:4317:4317"
+      - "127.0.0.1:4318:4318"
 
   grafana:
     restart: unless-stopped
