@@ -22,7 +22,9 @@ async function main() {
   try {
     await page.goto(`${baseUrl}/login`, { waitUntil: "networkidle", timeout: 30_000 });
     assert((await page.locator("h1").textContent())?.trim() === "Sign in", "Login heading did not render");
-    assert(await page.getByText("SearchForge", { exact: true }).first().isVisible(), "SearchForge brand is not visible");
+    const loginBrand = page.locator(".login-card .brand");
+    await loginBrand.waitFor({ state: "visible", timeout: 5_000 });
+    assert((await loginBrand.textContent())?.includes("SearchForge"), "SearchForge brand is not visible");
 
     await page.locator('input[name="email"]').fill(email);
     await page.locator('input[name="password"]').fill(password);
