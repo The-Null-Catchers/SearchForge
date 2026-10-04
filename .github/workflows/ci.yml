@@ -87,7 +87,7 @@ jobs:
 
   container-smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - run: cp .env.example .env
@@ -97,6 +97,26 @@ jobs:
         run: |
           curl --fail --retry 10 --retry-delay 2 http://localhost/health/ready
           curl --fail http://localhost/login
+      - name: Seed deterministic browser fixture
+        run: docker compose exec -T api node apps/api/dist/seed.js
+      - name: Run Chromium browser E2E
+        run: |
+          mkdir -p artifacts/browser-e2e
+          docker run --rm --network host \
+            -e SEARCHFORGE_E2E_BASE_URL=http://127.0.0.1 \
+            -e SEARCHFORGE_E2E_ARTIFACTS=/artifacts/browser-e2e \
+            -v "$PWD/tests/browser:/tests:ro" \
+            -v "$PWD/artifacts:/artifacts" \
+            mcr.microsoft.com/playwright:v1.55.0-noble \
+            bash -lc 'npm install --global --silent playwright@1.55.0 && NODE_PATH=$(npm root -g) node /tests/e2e.cjs'
+      - name: Upload browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-e2e
+          path: artifacts/browser-e2e
+          if-no-files-found: ignore
+          retention-days: 14
       - name: Capture service logs
         if: always()
         run: |
