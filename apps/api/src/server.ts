@@ -27,6 +27,7 @@ import { JobCancelled, SourceUnavailable } from "@searchforge/queue";
 import { explorerRoutes } from "./routes/explorer.js";
 import { rankingRoutes } from "./routes/ranking.js";
 import { logRoutes } from "./routes/logs.js";
+import { apiKeyControlRoutes } from "./routes/api-key-controls.js";
 
 export async function buildServer() {
   const app = Fastify({
@@ -116,6 +117,7 @@ export async function buildServer() {
   await documentRoutes(app, db, keys);
   await jobRoutes(app, db, redis, auth);
   await managementRoutes(app, db, auth, keys);
+  await apiKeyControlRoutes(app, db, auth, keys);
   await dashboardRoutes(app, db, auth);
   await scheduleRoutes(app, db, auth);
   await explorerRoutes(app, db, auth, runtime);
