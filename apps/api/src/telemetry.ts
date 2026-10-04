@@ -68,6 +68,10 @@ function resolveTraceEndpoint(endpoint?: string): string | null {
   return url.toString();
 }
 
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export class OtlpHttpTelemetry {
   private readonly endpoint: string | null;
   private readonly queue: OtlpSpan[] = [];
@@ -99,7 +103,6 @@ export class OtlpHttpTelemetry {
       startTimeUnixNano: nowUnixNano(),
       attributes: {
         "http.request.method": method,
-        "url.path": target,
         "server.address": this.config.serviceName
       }
     };
@@ -182,6 +185,10 @@ export class OtlpHttpTelemetry {
 
   async close(): Promise<void> {
     if (this.timer) clearInterval(this.timer);
-    while (this.queue.length > 0) await this.flush();
+    while (this.flushing) await delay(10);
+    while (this.queue.length > 0) {
+      await this.flush();
+      while (this.flushing) await delay(10);
+    }
   }
 }
