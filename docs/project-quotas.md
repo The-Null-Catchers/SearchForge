@@ -6,7 +6,9 @@ SearchForge stores project quota policy separately from usage counters. Admins a
 
 API-key authenticated requests increment the current UTC month API-request counter after credential, expiration, IP, and per-key RPM validation. A configured monthly API-request limit is a hard 429 boundary. Search requests also increment the monthly search counter and stop with 429 when the search quota is exhausted. Counter increments and quota checks run in one PostgreSQL transaction so rejected over-limit increments roll back.
 
-The Usage dashboard also reports crawl-page and document consumption. Hard admission enforcement for crawl-page and document ceilings is intentionally separate from the API/search request path because those writes are asynchronous worker operations; that enforcement must happen at crawl/index admission boundaries rather than in the dashboard.
+Document writes now enforce `maxDocuments` at write admission. Single-document and batch upserts serialize the project document-count check with a PostgreSQL advisory transaction lock, count only non-deleted documents in active indexes, and reject the whole request with 429 before mutation when new documents would exceed the configured ceiling. Updates to an already-active document do not consume another document slot, and duplicate ids inside a batch are rejected before persistence.
+
+The Usage dashboard also reports crawl-page consumption. Hard monthly crawl-page enforcement remains separate because crawling is asynchronous worker work; the next boundary is crawl admission/reservation so concurrent crawls cannot oversubscribe the monthly allowance.
 
 ## Notifications
 
