@@ -97,6 +97,16 @@ See docs/api-key-controls.md and docs/project-quotas.md for enforcement and priv
 
 See docs/demo-seed.md.
 
+## Embeddable search UI
+
+- Framework-independent `@searchforge/ui-kit` web component backed by the JavaScript SDK.
+- Debounced autocomplete with keyboard navigation and accessible listbox semantics.
+- Safe text-only result rendering, HTTP(S)-only result links, and best-effort click analytics.
+- Automatic Arabic/English direction switching plus CSS custom-property theming.
+- Browser integration explicitly rejects embedded admin/indexing keys and requires search-scoped keys.
+
+See docs/embeddable-search.md.
+
 ## Recent search-core completion
 
 - Compound AND/OR filter expressions with backward-compatible flat filters.
@@ -117,8 +127,8 @@ See docs/demo-seed.md.
   deferred retries and operator retry/dead-letter controls remain follow-up work.
 - Dead-letter/recovery administration for terminal Redis failures; terminal outbox retention is implemented.
 - External quota/expiration notification delivery remains; in-product warnings are implemented.
-- Embeddable UI, backup scripts, OpenTelemetry, browser E2E,
-  load tests with actual measured results, VPS restore rehearsal.
+- Backup scripts, OpenTelemetry, browser E2E, load tests with actual measured results,
+  VPS restore rehearsal.
 
 No performance numbers are claimed without a measured corpus and hardware profile.
 
@@ -126,4 +136,4 @@ No performance numbers are claimed without a measured corpus and hardware profil
 
 Owner-only project deletion now fences all project writes, revokes keys, drains source/index processors, removes immutable index storage and project-owned data, and retains only a scrubbed tombstone, durable cleanup receipt and security audit trail. See [project deletion](project-deletion.md).
 
-Confirmed, admin-only index deletion fences writes and drains builders before file/metadata erasure. Source deletion fences crawling, queues replacement builds, prevents rollback resurrection and purges obsolete segment files while preserving other documents. See [index deletion](index-deletion.md) and [source deletion](source-deletion.md). The current local suite passes 50 unit tests; PostgreSQL/Redis scenarios verify producer draining, storage failure/retry, delivery recovery and retained-segment inspection in CI.
+Confirmed, admin-only index deletion fences writes and drains builders before file/metadata erasure. Source deletion fences crawling, queues replacement builds, prevents rollback resurrection and purges obsolete segment files while preserving other documents. See [index deletion](index-deletion.md). The current local suite passes 50 unit tests; PostgreSQL/Redis scenarios verify producer draining, storage failure/retry, delivery recovery and retained-segment inspection in CI.
