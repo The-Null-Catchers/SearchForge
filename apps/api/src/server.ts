@@ -42,7 +42,7 @@ export async function buildServer() {
   const redis = createRedisConnection(config.REDIS_URL);
   const queues = createQueues(redis);
   const auth = new AuthService(db, config);
-  const keys = new ApiKeyService(db, config);
+  const keys = new ApiKeyService(db, config, redis);
   const runtime = new SearchRuntime(config.INDEX_STORAGE_PATH);
   const mailer = new Mailer(config);
 
@@ -50,7 +50,7 @@ export async function buildServer() {
   await app.register(cors, {
     origin: config.WEB_ORIGIN,
     credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
   });
   await app.register(rateLimit, {
     max: 300,
