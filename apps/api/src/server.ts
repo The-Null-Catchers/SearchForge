@@ -14,6 +14,7 @@ import { AuthService } from "./auth.js";
 import { config } from "./config.js";
 import { SearchRuntime } from "./search-runtime.js";
 import { Mailer } from "./mailer.js";
+import { OtlpHttpTelemetry, type HttpSpan } from "./telemetry.js";
 import { authRoutes } from "./routes/auth.js";
 import { projectRoutes } from "./routes/projects.js";
 import { searchRoutes } from "./routes/search.js";
@@ -29,6 +30,10 @@ import { rankingRoutes } from "./routes/ranking.js";
 import { logRoutes } from "./routes/logs.js";
 import { apiKeyControlRoutes } from "./routes/api-key-controls.js";
 import { quotaRoutes } from "./routes/quotas.js";
+
+function headerValue(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
 
 export async function buildServer() {
   const app = Fastify({
@@ -47,12 +52,21 @@ export async function buildServer() {
   const keys = new ApiKeyService(db, config, redis);
   const runtime = new SearchRuntime(config.INDEX_STORAGE_PATH);
   const mailer = new Mailer(config);
+  const telemetry = new OtlpHttpTelemetry({
+    serviceName: config.OTEL_SERVICE_NAME,
+    sampleRatio: config.OTEL_TRACE_SAMPLE_RATIO,
+    exportTimeoutMs: config.OTEL_EXPORT_TIMEOUT_MS,
+    ...(config.OTEL_EXPORTER_OTLP_ENDPOINT ? { endpoint: config.OTEL_EXPORTER_OTLP_ENDPOINT } : {}),
+    ...(config.GIT_SHA ? { serviceVersion: config.GIT_SHA } : {})
+  });
+  const requestSpans = new WeakMap<object, HttpSpan>();
 
   await app.register(cookie);
   await app.register(cors, {
     origin: config.WEB_ORIGIN,
     credentials: true,
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    exposedHeaders: ["traceparent"]
   });
   await app.register(rateLimit, {
     max: 300,
@@ -76,22 +90,36 @@ export async function buildServer() {
     registers: [metrics]
   });
 
-  app.addHook("onRequest", async (request) => {
+  app.addHook("onRequest", async (request, reply) => {
     (request as typeof request & { startedAt?: number }).startedAt = performance.now();
+    const path = request.url.split("?")[0] ?? "/";
+    const span = telemetry.startHttpSpan(request.method, path, headerValue(request.headers.traceparent));
+    requestSpans.set(request, span);
+    reply.header("traceparent", telemetry.traceparent(span));
+  });
+  app.addHook("onError", async (request, _reply, error) => {
+    const span = requestSpans.get(request);
+    if (span) telemetry.recordError(span, error);
   });
   app.addHook("onResponse", async (request, reply) => {
+    const route = request.routeOptions.url ?? "unknown";
     const startedAt = (request as typeof request & { startedAt?: number }).startedAt ?? performance.now();
     requestLatency.observe(
       {
         method: request.method,
-        route: request.routeOptions.url ?? "unknown",
+        route,
         status: String(reply.statusCode)
       },
       Math.max(0, performance.now() - startedAt) / 1000
     );
+    const span = requestSpans.get(request);
+    if (span) {
+      telemetry.finishHttpSpan(span, route, reply.statusCode);
+      requestSpans.delete(request);
+    }
   });
 
-  app.get("/health", async () => ({ status: "ok", service: "searchforge-api" }));
+  app.get("/health", async () => ({ status: "ok", service: "searchforge-api", tracing: telemetry.enabled }));
   app.get("/health/live", async () => ({ status: "live" }));
   app.get("/health/ready", async (_request, reply) => {
     try {
@@ -169,6 +197,7 @@ export async function buildServer() {
   });
 
   app.addHook("onClose", async () => {
+    await telemetry.close();
     await Promise.all(Object.values(queues).map((queue) => queue.close()));
     await redis.quit();
     await mailer.close();
