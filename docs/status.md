@@ -76,6 +76,15 @@ UTC buckets, while query text is suppressed until the exact query reaches the
 configured privacy threshold in the selected reporting window. Disabling analytics
 stops new records; it does not erase historical records.
 
+## API key controls
+
+- Admin-managed expiration timestamps and exact IPv4/IPv6 allowlists.
+- Redis-backed per-key requests-per-minute enforcement in addition to the global API limiter.
+- Dashboard creation/editing workflows with active, expiring-soon, expired and revoked status warnings.
+- Control changes are audited without persisting or disclosing raw secrets.
+
+See docs/api-key-controls.md for authentication order and privacy boundaries.
+
 ## Recent search-core completion
 
 - Compound AND/OR filter expressions with backward-compatible flat filters.
@@ -95,7 +104,8 @@ stops new records; it does not erase historical records.
 - Crawl retries are implemented for transient page fetch failures; durable per-page
   deferred retries and operator retry/dead-letter controls remain follow-up work.
 - Dead-letter/recovery administration for terminal Redis failures; terminal outbox retention is implemented.
-- Key-specific/project quotas, expiration/IP configuration UI and notifications.
+- Project-wide usage quotas and external quota/expiration notification delivery remain; key-specific expiration,
+  IP restrictions, per-key rate limits, and in-product expiration warnings are implemented.
 - Full tenant/synonym/analytics seeding, embeddable UI, backup scripts, OpenTelemetry, browser E2E,
   load tests with actual measured results, VPS restore rehearsal.
 

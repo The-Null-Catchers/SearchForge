@@ -27,6 +27,7 @@ import { JobCancelled, SourceUnavailable } from "@searchforge/queue";
 import { explorerRoutes } from "./routes/explorer.js";
 import { rankingRoutes } from "./routes/ranking.js";
 import { logRoutes } from "./routes/logs.js";
+import { apiKeyControlRoutes } from "./routes/api-key-controls.js";
 
 export async function buildServer() {
   const app = Fastify({
@@ -42,7 +43,7 @@ export async function buildServer() {
   const redis = createRedisConnection(config.REDIS_URL);
   const queues = createQueues(redis);
   const auth = new AuthService(db, config);
-  const keys = new ApiKeyService(db, config);
+  const keys = new ApiKeyService(db, config, redis);
   const runtime = new SearchRuntime(config.INDEX_STORAGE_PATH);
   const mailer = new Mailer(config);
 
@@ -50,7 +51,7 @@ export async function buildServer() {
   await app.register(cors, {
     origin: config.WEB_ORIGIN,
     credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
   });
   await app.register(rateLimit, {
     max: 300,
@@ -116,6 +117,7 @@ export async function buildServer() {
   await documentRoutes(app, db, keys);
   await jobRoutes(app, db, redis, auth);
   await managementRoutes(app, db, auth, keys);
+  await apiKeyControlRoutes(app, db, auth, keys);
   await dashboardRoutes(app, db, auth);
   await scheduleRoutes(app, db, auth);
   await explorerRoutes(app, db, auth, runtime);

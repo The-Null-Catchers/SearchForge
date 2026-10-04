@@ -2,19 +2,25 @@ import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { and, eq, isNull } from "drizzle-orm";
 import { apiKeys, projects, type createDatabase } from "@searchforge/db";
 import { AppError } from "@searchforge/shared";
+import type { Redis as IORedis } from "ioredis";
 import type { Config } from "./config.js";
 
 type Db = ReturnType<typeof createDatabase>["db"];
 export type KeyKind = "search" | "indexing" | "admin";
+export type ApiKeyOptions = {
+  expiresAt?: Date | null;
+  ipRestrictions?: string[];
+  rateLimitPerMinute?: number | null;
+};
 
 export class ApiKeyService {
-  constructor(private readonly db: Db, private readonly config: Config) {}
+  constructor(private readonly db: Db, private readonly config: Config, private readonly redis?: IORedis) {}
 
   private digest(secret: string): string {
     return createHmac("sha256", this.config.API_KEY_PEPPER).update(secret).digest("hex");
   }
 
-  async create(projectId: string, kind: KeyKind, name: string) {
+  async create(projectId: string, kind: KeyKind, name: string, options: ApiKeyOptions = {}) {
     const prefix = randomBytes(9).toString("base64url").slice(0, 12);
     const secret = randomBytes(32).toString("base64url");
     await this.db.insert(apiKeys).values({
@@ -22,14 +28,31 @@ export class ApiKeyService {
       kind,
       name,
       prefix,
-      secretDigest: this.digest(secret)
+      secretDigest: this.digest(secret),
+      expiresAt: options.expiresAt ?? null,
+      ipRestrictions: options.ipRestrictions ?? [],
+      rateLimitPerMinute: options.rateLimitPerMinute ?? null
     });
     return {
       key: `sf_${kind}_${prefix}_${secret}`,
       prefix,
       kind,
-      name
+      name,
+      expiresAt: options.expiresAt ?? null,
+      ipRestrictions: options.ipRestrictions ?? [],
+      rateLimitPerMinute: options.rateLimitPerMinute ?? null
     };
+  }
+
+  private async enforceRateLimit(keyId: string, limit: number | null) {
+    if (!limit || !this.redis) return;
+    const bucket = Math.floor(Date.now() / 60_000);
+    const redisKey = `api-key-rate:${keyId}:${bucket}`;
+    const result = await this.redis.multi().incr(redisKey).expire(redisKey, 120).exec();
+    const count = Number(result?.[0]?.[1] ?? 0);
+    if (count > limit) {
+      throw new AppError("RATE_LIMITED", "API key rate limit exceeded", 429, { limitPerMinute: limit });
+    }
   }
 
   async authenticate(raw: string, allowed: KeyKind[], ip?: string) {
@@ -62,6 +85,7 @@ export class ApiKeyService {
       throw new AppError("UNAUTHENTICATED", "Invalid API key", 401);
     }
 
+    await this.enforceRateLimit(record.key.id, record.key.rateLimitPerMinute);
     void this.db.update(apiKeys).set({ lastUsedAt: new Date() }).where(eq(apiKeys.id, record.key.id));
     return {
       id: record.key.id,
