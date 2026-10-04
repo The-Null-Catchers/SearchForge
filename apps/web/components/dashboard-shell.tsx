@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   Activity, BarChart3, Braces, Database, FileSearch, Gauge, KeyRound, ListTree,
-  Moon, Search, Settings, SlidersHorizontal, Sparkles, Sun, TerminalSquare
+  Moon, Search, Settings, SlidersHorizontal, Sparkles, Sun, TerminalSquare, WalletCards
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { ProjectProvider, useProject } from "./project-context";
@@ -18,6 +18,7 @@ const navigation = [
   ["/dashboard/ranking", "Ranking", SlidersHorizontal],
   ["/dashboard/synonyms", "Synonyms", Braces],
   ["/dashboard/api-keys", "API Keys", KeyRound],
+  ["/dashboard/usage", "Usage", WalletCards],
   ["/dashboard/logs", "Logs", TerminalSquare],
   ["/dashboard/settings", "Settings", Settings]
 ] as const;
