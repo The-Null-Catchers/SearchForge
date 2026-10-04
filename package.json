@@ -10,7 +10,8 @@
     "typecheck": "turbo typecheck",
     "format": "prettier --write .",
     "db:migrate": "pnpm --filter @searchforge/db migrate",
-    "db:seed": "pnpm --filter @searchforge/api seed"
+    "db:seed": "pnpm --filter @searchforge/api seed",
+    "load:search": "node tests/load/search-load.mjs"
   },
   "devDependencies": {
     "prettier": "^3.6.2",
