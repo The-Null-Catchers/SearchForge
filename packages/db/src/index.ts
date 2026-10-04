@@ -1,6 +1,9 @@
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
-import * as schema from "./schema.js";
+import * as baseSchema from "./schema.js";
+import * as quotaSchema from "./quota-schema.js";
+
+const schema = { ...baseSchema, ...quotaSchema };
 
 export function createDatabase(connectionString = process.env.POSTGRES_URL) {
   if (!connectionString) throw new Error("POSTGRES_URL is required");
@@ -12,3 +15,4 @@ export function createDatabase(connectionString = process.env.POSTGRES_URL) {
 }
 
 export * from "./schema.js";
+export * from "./quota-schema.js";

@@ -28,6 +28,7 @@ import { explorerRoutes } from "./routes/explorer.js";
 import { rankingRoutes } from "./routes/ranking.js";
 import { logRoutes } from "./routes/logs.js";
 import { apiKeyControlRoutes } from "./routes/api-key-controls.js";
+import { quotaRoutes } from "./routes/quotas.js";
 
 export async function buildServer() {
   const app = Fastify({
@@ -118,6 +119,7 @@ export async function buildServer() {
   await jobRoutes(app, db, redis, auth);
   await managementRoutes(app, db, auth, keys);
   await apiKeyControlRoutes(app, db, auth, keys);
+  await quotaRoutes(app, db, auth);
   await dashboardRoutes(app, db, auth);
   await scheduleRoutes(app, db, auth);
   await explorerRoutes(app, db, auth, runtime);

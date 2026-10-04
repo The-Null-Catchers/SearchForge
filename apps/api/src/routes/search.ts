@@ -41,6 +41,7 @@ export async function searchRoutes(
   }
   app.post("/v1/indexes/:indexSlug/search", async (request) => {
     const auth = await keys.authenticate(apiToken(request), ["search", "indexing", "admin"], request.ip);
+    await keys.consumeSearch(auth.projectId);
     const { indexSlug } = z.object({ indexSlug: z.string().min(1).max(80) }).parse(request.params);
     const query = searchRequestSchema.parse(request.body);
     const { index, version } = await resolveIndex(db, auth.projectId, indexSlug);
