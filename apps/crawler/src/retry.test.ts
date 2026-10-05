@@ -41,6 +41,13 @@ describe("page retry policy", () => {
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(h.sleep).not.toHaveBeenCalled();
   });
+  it("resumes at a persisted attempt and does not reset the retry budget", async () => {
+    const fetch = vi.fn().mockResolvedValue(response(503));
+    const h = { ...hooks(), startAttempt: 3 };
+    expect((await retryPageFetch(fetch, policy, h)).status).toBe(503);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(h.sleep).not.toHaveBeenCalled();
+  });
   it("limits attempts and does not retry permanent HTTP failures", async () => {
     const exhausted = vi.fn().mockResolvedValue(response(503));
     expect((await retryPageFetch(exhausted, policy, hooks())).status).toBe(503);
