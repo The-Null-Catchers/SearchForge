@@ -12,15 +12,16 @@ import {
 import { crawlConfigSchema, type CrawlConfig } from "@searchforge/shared";
 import { assertJobActive, enqueueIndex, JobCancelled } from "@searchforge/queue";
 import type { Redis as IORedis } from "ioredis";
+import { clearDeferredRetry, loadDueDeferredRetries, persistDeferredRetry } from "./deferred.js";
 import { extractHtml, hammingDistance, simHash64 } from "./extract.js";
 import { safeFetch, type SafeFetchResult } from "./fetch.js";
-import { retryPageFetch } from "./retry.js";
+import { RetryDeferred, retryPageFetch } from "./retry.js";
 import { RobotsPolicy } from "./robots.js";
 import { parseSitemap } from "./sitemap.js";
 import { normalizeUrl, sameAllowedDomain } from "./url.js";
 
 type Db = ReturnType<typeof createDatabase>["db"];
-type FrontierItem = { url: string; depth: number };
+type FrontierItem = { url: string; depth: number; startAttempt?: number; deferred?: boolean };
 
 class Semaphore {
   private active = 0;
@@ -168,14 +169,17 @@ export class CrawlRunner {
       await tx.update(jobs).set({ state: "running", phase: "discover", startedAt: new Date(), updatedAt: new Date() }).where(eq(jobs.id, databaseJobId));
     });
     const sitemapSeeds = (await Promise.all(config.startUrls.map((url) => this.sitemapSeeds(url, config, databaseJobId)))).flat();
+    const dueRetries = await loadDueDeferredRetries(this.db, sourceId, new Date(), config.maxPages);
     const frontier: FrontierItem[] = [];
     const scheduled = new Set<string>();
-    const enqueue = (input: string, depth: number) => {
+    const enqueue = (input: string, depth: number, startAttempt = 1, deferred = false) => {
       const url = normalizeUrl(input);
       if (scheduled.size >= config.maxPages || scheduled.has(url) || !this.matchesRules(url, config)) return;
       scheduled.add(url);
-      frontier.push({ url, depth });
+      frontier.push({ url, depth, startAttempt, deferred });
     };
+    // Due retries receive the crawl budget first so a busy sitemap cannot starve them.
+    for (const retry of dueRetries) enqueue(retry.normalizedUrl, retry.depth, retry.nextAttempt, true);
     for (const url of [...sitemapSeeds, ...config.startUrls]) enqueue(url, 0);
     const seen = new Set<string>();
     const contentHashes = new Set<string>();
@@ -183,6 +187,7 @@ export class CrawlRunner {
     let processed = 0;
     let failed = 0;
     let indexed = 0;
+    let deferred = 0;
 
     while (frontier.length > 0 && processed < config.maxPages) {
       await assertJobActive(this.db, databaseJobId);
@@ -194,11 +199,16 @@ export class CrawlRunner {
         } catch {
           return;
         }
-        if (seen.has(normalized) || !this.matchesRules(normalized, config)) return;
+        if (seen.has(normalized)) return;
+        if (!this.matchesRules(normalized, config)) {
+          if (item.deferred) await clearDeferredRetry(this.db, sourceId, normalized);
+          return;
+        }
         seen.add(normalized);
         const url = new URL(normalized);
         const policy = await this.robotsFor(url, config);
         if (config.respectRobots && !policy.allows(url, this.userAgent)) {
+          if (item.deferred) await clearDeferredRetry(this.db, sourceId, normalized);
           await this.db.insert(crawlPages).values({
             jobId: databaseJobId,
             sourceId,
@@ -243,11 +253,13 @@ export class CrawlRunner {
               }
             }), config, {
               checkActive: () => assertJobActive(this.db, databaseJobId),
+              startAttempt: item.startAttempt,
               onRetry: (attempt, delayMs, status) => console.info(JSON.stringify({
                 event: "crawl.page_retry", jobId: databaseJobId, sourceId, url: normalized, attempt, delayMs, status
               }))
             });
             lastResponse = response;
+            await clearDeferredRetry(this.db, sourceId, normalized);
             if (response.status === 304) {
               if (!previous || !existing || Object.keys(headers).length === 0) throw new Error("Unexpected 304 without a stored document");
               if (item.depth < config.maxDepth) {
@@ -359,6 +371,35 @@ export class CrawlRunner {
             }).onConflictDoNothing();
           } catch (error) {
             if (error instanceof JobCancelled) throw error;
+            if (error instanceof RetryDeferred) {
+              deferred += 1;
+              lastResponse = error.response;
+              await persistDeferredRetry(this.db, {
+                sourceId,
+                lastJobId: databaseJobId,
+                url: item.url,
+                normalizedUrl: normalized,
+                depth: item.depth,
+                nextAttempt: error.nextAttempt,
+                retryAt: error.retryAt,
+                httpStatus: error.response.status
+              });
+              await this.db.insert(crawlPages).values({
+                jobId: databaseJobId,
+                sourceId,
+                url: item.url,
+                normalizedUrl: normalized,
+                depth: item.depth,
+                status: "deferred",
+                httpStatus: error.response.status,
+                responseTimeMs: Math.round(error.response.elapsedMs),
+                contentType: error.response.headers.get("content-type"),
+                error: error.message,
+                crawledAt: new Date()
+              }).onConflictDoNothing();
+              return;
+            }
+            await clearDeferredRetry(this.db, sourceId, normalized);
             failed += 1;
             await this.db.insert(crawlPages).values({
               jobId: databaseJobId,
@@ -383,11 +424,11 @@ export class CrawlRunner {
         discovered: seen.size + frontier.length,
         processed,
         failed,
+        deferred,
         indexed,
         maxPages: config.maxPages
       });
     }
-
 
     const result = await this.db.transaction(async tx => {
       // Same lock order as source deletion: index, source, then job.
@@ -398,11 +439,11 @@ export class CrawlRunner {
       await assertJobActive(tx, databaseJobId);
       const indexJobId = indexed === 0 && targetIndex.activeVersionId ? undefined
         : await enqueueIndex(tx, projectId, targetIndex.id, sourceId);
-      const progress = { discovered: seen.size, processed, failed, indexed, ...(indexJobId ? { indexJobId } : {}) };
+      const progress = { discovered: seen.size, processed, failed, deferred, indexed, ...(indexJobId ? { indexJobId } : {}) };
       await tx.update(sources).set({ lastCrawledAt: new Date(), updatedAt: new Date() }).where(eq(sources.id, sourceId));
       await tx.update(jobs).set({ state: "completed", phase: "completed", progress,
         finishedAt: new Date(), updatedAt: new Date() }).where(eq(jobs.id, databaseJobId));
-      return { processed, failed, indexed, indexJobId };
+      return { processed, failed, deferred, indexed, indexJobId };
     });
     await this.redis.publish(`job:${databaseJobId}`, JSON.stringify({ status: "completed", ...result }));
     return result;
