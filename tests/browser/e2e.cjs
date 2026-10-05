@@ -11,6 +11,35 @@ function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
+async function verifyAccountSecurityRoutes(page) {
+  await page.goto(`${baseUrl}/forgot-password`, { waitUntil: "networkidle", timeout: 30_000 });
+  await page.getByRole("heading", { name: "Reset your password", exact: true }).waitFor({ timeout: 5_000 });
+  assert(await page.getByLabel("Email", { exact: true }).isVisible(), "Forgot-password email field did not render");
+  assert(await page.getByRole("button", { name: "Send reset link", exact: true }).isEnabled(), "Forgot-password submit is disabled");
+
+  await page.goto(`${baseUrl}/reset-password`, { waitUntil: "networkidle", timeout: 30_000 });
+  await page.getByRole("heading", { name: "Choose a new password", exact: true }).waitFor({ timeout: 5_000 });
+  assert((await page.getByRole("alert").textContent())?.includes("missing its token"), "Reset-password missing-token warning did not render");
+  assert(await page.getByRole("button", { name: "Update password", exact: true }).isDisabled(), "Reset-password submit should be disabled without a token");
+
+  await page.goto(`${baseUrl}/reset-password?token=browser-e2e-placeholder`, { waitUntil: "networkidle", timeout: 30_000 });
+  await page.getByLabel("New password", { exact: true }).fill("BrowserE2EPassword123!");
+  await page.getByLabel("Confirm password", { exact: true }).fill("BrowserE2EPassword456!");
+  assert(!page.url().includes("token="), "Reset token was not scrubbed from browser history");
+  await page.getByRole("button", { name: "Update password", exact: true }).click();
+  assert((await page.getByRole("alert").textContent())?.includes("do not match"), "Reset-password client validation did not reject mismatched passwords");
+
+  await page.goto(`${baseUrl}/verify-email`, { waitUntil: "networkidle", timeout: 30_000 });
+  await page.getByRole("heading", { name: "Verify your email", exact: true }).waitFor({ timeout: 5_000 });
+  assert((await page.getByRole("alert").textContent())?.includes("missing its token"), "Verify-email missing-token warning did not render");
+  assert(await page.getByRole("button", { name: "Verify email", exact: true }).isDisabled(), "Verify-email submit should be disabled without a token");
+
+  await page.goto(`${baseUrl}/verify-email?token=browser-e2e-placeholder`, { waitUntil: "networkidle", timeout: 30_000 });
+  await page.getByRole("heading", { name: "Verify your email", exact: true }).waitFor({ timeout: 5_000 });
+  assert(!page.url().includes("token="), "Verification token was not scrubbed from browser history");
+  assert(await page.getByRole("button", { name: "Verify email", exact: true }).isEnabled(), "Verify-email submit should be enabled when a token is present");
+}
+
 async function main() {
   fs.mkdirSync(artifactsDir, { recursive: true });
   const browser = await chromium.launch({ headless: true });
@@ -20,6 +49,8 @@ async function main() {
   page.on("pageerror", (error) => pageErrors.push(error.message));
 
   try {
+    await verifyAccountSecurityRoutes(page);
+
     await page.goto(`${baseUrl}/login`, { waitUntil: "networkidle", timeout: 30_000 });
     assert((await page.locator("h1").textContent())?.trim() === "Sign in", "Login heading did not render");
     const loginBrand = page.locator(".login-card .brand");
@@ -63,7 +94,12 @@ async function main() {
     if (pageErrors.length > 0) throw new Error(`Browser page errors: ${pageErrors.join(" | ")}`);
 
     await page.screenshot({ path: path.join(artifactsDir, "dashboard-analytics.png"), fullPage: true });
-    fs.writeFileSync(path.join(artifactsDir, "result.json"), JSON.stringify({ status: "passed", url: page.url(), projectOptions }, null, 2));
+    fs.writeFileSync(path.join(artifactsDir, "result.json"), JSON.stringify({
+      status: "passed",
+      url: page.url(),
+      projectOptions,
+      accountSecurityRoutes: ["forgot-password", "reset-password", "verify-email"]
+    }, null, 2));
   } catch (error) {
     await page.screenshot({ path: path.join(artifactsDir, "failure.png"), fullPage: true }).catch(() => undefined);
     fs.writeFileSync(path.join(artifactsDir, "result.json"), JSON.stringify({ status: "failed", error: error instanceof Error ? error.message : String(error), url: page.url(), pageErrors }, null, 2));
