@@ -5,13 +5,13 @@ type Db = ReturnType<typeof createDatabase>["db"];
 
 export type DeferredPageRetry = {
   sourceId: string;
-  lastJobId?: string;
+  lastJobId?: string | undefined;
   url: string;
   normalizedUrl: string;
   depth: number;
   nextAttempt: number;
   retryAt: Date;
-  httpStatus?: number;
+  httpStatus?: number | undefined;
 };
 
 export async function persistDeferredRetry(db: Db, retry: DeferredPageRetry) {
