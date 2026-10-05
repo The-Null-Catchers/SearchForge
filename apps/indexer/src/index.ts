@@ -3,7 +3,7 @@ import { Worker } from "bullmq";
 import { Counter, Gauge, Registry, collectDefaultMetrics } from "prom-client";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { createDatabase, jobs } from "@searchforge/db";
-import { createRedisConnection, finishCancelled, JobCancelled, type IndexJobData } from "@searchforge/queue";
+import { claimJobRun, createRedisConnection, finishCancelled, heartbeatJobRun, JobCancelled, JobFenced, type IndexJobData } from "@searchforge/queue";
 import { IndexBuilder } from "./index-builder.js";
 
 const postgresUrl = process.env.POSTGRES_URL;
@@ -19,19 +19,34 @@ const metrics = new Registry();
 collectDefaultMetrics({ register: metrics, prefix: "searchforge_worker_" });
 const completed = new Counter({ name: "searchforge_index_jobs_completed_total", help: "Completed index jobs", registers: [metrics] });
 const failed = new Counter({ name: "searchforge_index_jobs_failed_total", help: "Failed index jobs", registers: [metrics] });
+const fenced = new Counter({ name: "searchforge_index_jobs_fenced_total", help: "Indexer deliveries ignored after execution fencing", registers: [metrics] });
 const active = new Gauge({ name: "searchforge_index_jobs_active", help: "Active index jobs", registers: [metrics] });
 
 const indexWorker = new Worker<IndexJobData>("index", async (job) => {
   active.inc();
+  const executionId = typeof job.id === "string" ? job.id : String(job.id ?? "");
+  let heartbeat: ReturnType<typeof setInterval> | undefined;
   try {
+    if (!executionId || !(await claimJobRun(db, job.data.databaseJobId, executionId))) {
+      fenced.inc();
+      return { fenced: true };
+    }
+    heartbeat = setInterval(() => {
+      void heartbeatJobRun(db, job.data.databaseJobId, executionId)
+        .catch(error => server.log.error({ err: error, databaseJobId: job.data.databaseJobId }, "Indexer heartbeat failed"));
+    }, 15_000);
     const result = await builder.build(job.data.databaseJobId, job.data.projectId, job.data.indexId);
     completed.inc();
     return result;
   } catch (error) {
     const [current] = await db.select().from(jobs).where(eq(jobs.id, job.data.databaseJobId)).limit(1);
     if (current?.state === "completed") return current.progress;
+    if (current?.externalJobId !== executionId || error instanceof JobFenced) {
+      fenced.inc();
+      return { fenced: true };
+    }
     if (error instanceof JobCancelled || current?.cancelRequestedAt) {
-      await finishCancelled(db, job.data.databaseJobId);
+      await finishCancelled(db, job.data.databaseJobId, executionId);
       await redis.publish(`job:${job.data.databaseJobId}`, JSON.stringify({ status: "cancelled", phase: "cancelled" }));
       return { cancelled: true };
     }
@@ -42,13 +57,14 @@ const indexWorker = new Worker<IndexJobData>("index", async (job) => {
       errorMessage: error instanceof Error ? error.message : "Unknown indexing failure",
       finishedAt: new Date(),
       updatedAt: new Date()
-    }).where(and(eq(jobs.id, job.data.databaseJobId), inArray(jobs.state, ["queued", "running", "failed"]), isNull(jobs.cancelRequestedAt)));
+    }).where(and(eq(jobs.id, job.data.databaseJobId), eq(jobs.externalJobId, executionId), inArray(jobs.state, ["queued", "running", "failed"]), isNull(jobs.cancelRequestedAt)));
     await redis.publish(`job:${job.data.databaseJobId}`, JSON.stringify({
       status: "failed",
       message: error instanceof Error ? error.message : "Unknown indexing failure"
     }));
     throw error;
   } finally {
+    if (heartbeat) clearInterval(heartbeat);
     active.dec();
   }
 }, {

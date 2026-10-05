@@ -20,13 +20,13 @@ const dispatchRedis = redis.duplicate({ maxRetriesPerRequest: 1, commandTimeout:
 const queues = createQueues(dispatchRedis);
 const dispatcher = new JobDispatcher(db, queues);
 
-
 const metrics = new Registry();
 collectDefaultMetrics({ register: metrics, prefix: "searchforge_worker_" });
 const completed = new Counter({ name: "searchforge_cleanup_jobs_completed_total", help: "Completed cleanup jobs", registers: [metrics] });
 const failed = new Counter({ name: "searchforge_cleanup_jobs_failed_total", help: "Failed cleanup jobs", registers: [metrics] });
 const active = new Gauge({ name: "searchforge_cleanup_jobs_active", help: "Active cleanup jobs", registers: [metrics] });
 const outboxPurged = new Counter({ name: "searchforge_outbox_rows_purged_total", help: "Terminal outbox rows purged after retention", registers: [metrics] });
+const runningRecovered = new Counter({ name: "searchforge_running_jobs_recovered_total", help: "Stale running crawl/index jobs fenced and requeued", registers: [metrics] });
 
 const cleanup = new IndexCleanup(db, storagePath);
 const sourceCleanup = new SourceCleanup(db, storagePath);
@@ -59,7 +59,7 @@ const cleanupWorker = new Worker<CleanupJobData>("cleanup", async (job) => {
 });
 
 const server = Fastify({ logger: true });
-cleanupWorker.on("error", error => server.log.error({ err: error }, "Cleanup worker error"));
+cleanupWorker.on("error", error => server.log.error({ err: error }, "Queue worker error"));
 cleanupWorker.on("failed", (job, error) => server.log.error({ err: error, jobId: job?.id }, "Cleanup attempt failed"));
 server.get("/health/live", async () => ({ status: "live" }));
 server.get("/health/ready", async (_request, reply) => {
@@ -78,6 +78,9 @@ server.get("/metrics", async (_request, reply) => {
 const configuredRetentionDays = Number(process.env.OUTBOX_RETENTION_DAYS ?? "7");
 const outboxRetentionMs = (Number.isFinite(configuredRetentionDays) && configuredRetentionDays >= 1
   ? configuredRetentionDays : 7) * 24 * 60 * 60 * 1000;
+const configuredRunningStaleSeconds = Number(process.env.RUNNING_JOB_STALE_SECONDS ?? "120");
+const runningStaleMs = (Number.isFinite(configuredRunningStaleSeconds) && configuredRunningStaleSeconds >= 30
+  ? configuredRunningStaleSeconds : 120) * 1000;
 let nextOutboxPurgeAt = 0;
 let tickInFlight: Promise<void> | undefined;
 function tick() {
@@ -85,6 +88,11 @@ function tick() {
   tickInFlight = (async () => {
     try {
       await dispatcher.schedule();
+      const runningRecovery = await dispatcher.recoverStaleRunning(new Date(), runningStaleMs);
+      if (runningRecovery.recovered) {
+        runningRecovered.inc(runningRecovery.recovered);
+        server.log.warn(runningRecovery, "Recovered stale running jobs after execution lock release");
+      }
       await dispatcher.dispatch();
       const recovery = await dispatcher.reconcile();
       if (recovery.recovered) server.log.warn(recovery, "Recovered missing queued Redis jobs");
