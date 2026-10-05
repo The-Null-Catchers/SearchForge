@@ -47,9 +47,13 @@ login page successfully. Real Chromium dashboard smoke coverage is now included 
 - Regression scenarios added to PostgreSQL/Redis integration CI.
 - Queued-job recovery after acknowledged Redis job loss, rotating bounded checks,
   concurrent dispatchers and Redis outage retries. Running-job recovery still
-  requires processor fencing; terminal tasks are excluded.
+  requires processor fencing; terminal tasks are excluded from automatic replay.
+- Failed crawl/index jobs are exposed through a project dead-letter view and can be
+  transactionally re-queued by admins while durable outbox metadata is retained.
+- Operator retries allocate a fresh BullMQ job ID, reject overlapping source/index work,
+  and are audited without copying failure text into audit metadata.
 
-See docs/job-lifecycle.md for delivery semantics and cancellation boundaries.
+See docs/job-lifecycle.md and docs/job-recovery.md for delivery, cancellation and recovery boundaries.
 
 ## Explorer additions
 
@@ -136,6 +140,15 @@ See docs/observability.md.
 
 See docs/browser-e2e.md.
 
+## Search load measurement
+
+- A dependency-free load harness targets the real authenticated search endpoint.
+- It records throughput, error rate/status distribution, wall-clock p50/p95/p99/max latency, and engine-reported processing latency.
+- Concurrency, warmup, timeout, bilingual query mix, error thresholds and optional p95 thresholds are configurable.
+- Structured JSON evidence is produced without persisting API keys.
+
+See docs/load-testing.md. Measured VPS results still require a representative deployed corpus and hardware description.
+
 ## Recent search-core completion
 
 - Compound AND/OR filter expressions with backward-compatible flat filters.
@@ -153,10 +166,10 @@ See docs/browser-e2e.md.
 ## Remaining before MVP release
 
 - Crawl retries are implemented for transient page fetch failures; durable per-page
-  deferred retries and operator retry/dead-letter controls remain follow-up work.
-- Dead-letter/recovery administration for terminal Redis failures; terminal outbox retention is implemented.
+  deferred retries remain follow-up work.
+- Processor fencing/recovery for ambiguous running jobs after worker loss remains; terminal failed crawl/index jobs now have operator dead-letter/retry controls while their outbox metadata is retained.
 - External quota/expiration notification delivery remains; in-product warnings are implemented.
-- Load tests with actual measured results and VPS restore rehearsal remain release work.
+- Load tests with actual measured VPS results and VPS restore rehearsal remain release evidence work.
 
 No performance numbers are claimed without a measured corpus and hardware profile.
 
