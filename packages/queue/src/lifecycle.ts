@@ -30,14 +30,17 @@ export async function claimJobRun(db: Db, id: string, externalJobId: string) {
     const [job] = await tx.select().from(jobs).where(eq(jobs.id, id)).for("update");
     if (!job || job.externalJobId !== externalJobId) return false;
     if (job.state === "completed" || job.state === "cancelled" || job.cancelRequestedAt) return false;
-    if (job.state !== "queued") return false;
+    if (!["queued", "failed"].includes(job.state)) return false;
     const now = new Date();
     const [claimed] = await tx.update(jobs).set({
       state: "running",
       phase: "starting",
       startedAt: now,
+      finishedAt: null,
+      errorCode: null,
+      errorMessage: null,
       updatedAt: now
-    }).where(and(eq(jobs.id, id), eq(jobs.externalJobId, externalJobId), eq(jobs.state, "queued"), isNull(jobs.cancelRequestedAt))).returning({ id: jobs.id });
+    }).where(and(eq(jobs.id, id), eq(jobs.externalJobId, externalJobId), inArray(jobs.state, ["queued", "failed"]), isNull(jobs.cancelRequestedAt))).returning({ id: jobs.id });
     return Boolean(claimed);
   });
 }
