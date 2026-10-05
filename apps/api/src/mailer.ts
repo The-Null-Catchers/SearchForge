@@ -9,6 +9,10 @@ export class Mailer {
     this.transporter = config.SMTP_URL ? nodemailer.createTransport(config.SMTP_URL) : null;
   }
 
+  get configured(): boolean {
+    return this.transporter !== null;
+  }
+
   private requireTransporter(): Transporter {
     if (!this.transporter) {
       throw new AppError("INTERNAL_ERROR", "Email delivery is not configured", 503);
@@ -37,6 +41,15 @@ export class Mailer {
       subject: "Reset your SearchForge password",
       text: `Reset your SearchForge password by opening this link: ${url.toString()}\n\nThis link expires in 30 minutes.`,
       html: `<p>Reset your SearchForge password:</p><p><a href="${url.toString()}">Reset password</a></p><p>This link expires in 30 minutes.</p>`
+    });
+  }
+
+  async sendOperationalAlert(email: string, subject: string, text: string): Promise<void> {
+    await this.requireTransporter().sendMail({
+      from: this.config.MAIL_FROM,
+      to: email,
+      subject,
+      text
     });
   }
 

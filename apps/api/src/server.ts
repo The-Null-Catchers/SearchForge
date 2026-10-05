@@ -4,7 +4,7 @@ import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
 import { ZodError } from "zod";
-import { Registry, collectDefaultMetrics, Histogram } from "prom-client";
+import { Counter, Registry, collectDefaultMetrics, Histogram } from "prom-client";
 import { sql } from "drizzle-orm";
 import { createDatabase } from "@searchforge/db";
 import { createQueues, createRedisConnection } from "@searchforge/queue";
@@ -14,6 +14,7 @@ import { AuthService } from "./auth.js";
 import { config } from "./config.js";
 import { SearchRuntime } from "./search-runtime.js";
 import { Mailer } from "./mailer.js";
+import { NotificationService } from "./notifications.js";
 import { OtlpHttpTelemetry, type HttpSpan } from "./telemetry.js";
 import { authRoutes } from "./routes/auth.js";
 import { projectRoutes } from "./routes/projects.js";
@@ -52,6 +53,7 @@ export async function buildServer() {
   const keys = new ApiKeyService(db, config, redis);
   const runtime = new SearchRuntime(config.INDEX_STORAGE_PATH);
   const mailer = new Mailer(config);
+  const notificationService = new NotificationService(pool, mailer, config.PUBLIC_WEB_URL);
   const telemetry = new OtlpHttpTelemetry({
     serviceName: config.OTEL_SERVICE_NAME,
     sampleRatio: config.OTEL_TRACE_SAMPLE_RATIO,
@@ -89,6 +91,29 @@ export async function buildServer() {
     buckets: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5],
     registers: [metrics]
   });
+  const operationalNotifications = new Counter({
+    name: "searchforge_operational_notifications_total",
+    help: "Operational email notifications queued and delivered",
+    labelNames: ["result"],
+    registers: [metrics]
+  });
+
+  let notificationTimer: NodeJS.Timeout | undefined;
+  let notificationSweepInFlight: Promise<void> | undefined;
+  const runNotificationSweep = () => {
+    if (!mailer.configured || notificationSweepInFlight) return;
+    notificationSweepInFlight = notificationService.sweep()
+      .then((result) => {
+        if (result.queued > 0) operationalNotifications.inc({ result: "queued" }, result.queued);
+        if (result.sent > 0) operationalNotifications.inc({ result: "sent" }, result.sent);
+        if (result.failed > 0) operationalNotifications.inc({ result: "failed" }, result.failed);
+        if (result.queued > 0 || result.sent > 0 || result.failed > 0) {
+          app.log.info(result, "Operational notification sweep completed");
+        }
+      })
+      .catch((error) => app.log.error({ err: error }, "Operational notification sweep failed; will retry"))
+      .finally(() => { notificationSweepInFlight = undefined; });
+  };
 
   app.addHook("onRequest", async (request, reply) => {
     (request as typeof request & { startedAt?: number }).startedAt = performance.now();
@@ -197,12 +222,20 @@ export async function buildServer() {
   });
 
   app.addHook("onClose", async () => {
+    if (notificationTimer) clearInterval(notificationTimer);
+    await notificationSweepInFlight;
     await telemetry.close();
     await Promise.all(Object.values(queues).map((queue) => queue.close()));
     await redis.quit();
     await mailer.close();
     await pool.end();
   });
+
+  if (mailer.configured) {
+    notificationTimer = setInterval(runNotificationSweep, 5 * 60 * 1000);
+    notificationTimer.unref();
+    runNotificationSweep();
+  }
 
   return app;
 }
