@@ -194,6 +194,32 @@ export class JobDispatcher {
     });
   }
 
+  async scheduleDeferredCrawls(now = new Date(), limit = 25) {
+    if (!Number.isInteger(limit) || limit < 1 || limit > 500) {
+      throw new RangeError("limit must be between 1 and 500");
+    }
+    return this.db.transaction(async tx => {
+      const due = await tx.execute<{ source_id: string; project_id: string }>(sql`
+        select r.source_id, s.project_id
+        from crawl_page_retries r
+        join sources s on s.id = r.source_id
+        where r.retry_at <= ${now}
+          and s.enabled = true
+          and s.deletion_requested_at is null
+        order by r.retry_at asc, r.source_id asc
+        limit ${limit}
+        for update of r skip locked
+      `);
+      const scheduled = new Set<string>();
+      for (const row of due.rows) {
+        if (scheduled.has(row.source_id)) continue;
+        await enqueueCrawl(tx, row.project_id, row.source_id);
+        scheduled.add(row.source_id);
+      }
+      return { due: due.rows.length, scheduled: scheduled.size };
+    });
+  }
+
   async schedule(now = new Date()) {
     return this.db.transaction(async tx => {
       const due = await tx.select().from(crawlSchedules)
