@@ -46,14 +46,15 @@ login page successfully. Real Chromium dashboard smoke coverage is now included 
 - Sources dashboard schedule controls, cancellation and live polling.
 - Regression scenarios added to PostgreSQL/Redis integration CI.
 - Queued-job recovery after acknowledged Redis job loss, rotating bounded checks,
-  concurrent dispatchers and Redis outage retries. Running-job recovery still
-  requires processor fencing; terminal tasks are excluded from automatic replay.
+  concurrent dispatchers and Redis outage retries.
+- Crawl/index deliveries now claim the durable BullMQ execution ID and heartbeat while running.
+- Stale running jobs are recovered only after the corresponding PostgreSQL processor advisory lock is confirmed released; recovery rotates the execution ID and durable outbox dispatch state before replay.
 - Failed crawl/index jobs are exposed through a project dead-letter view and can be
   transactionally re-queued by admins while durable outbox metadata is retained.
 - Operator retries allocate a fresh BullMQ job ID, reject overlapping source/index work,
   and are audited without copying failure text into audit metadata.
 
-See docs/job-lifecycle.md and docs/job-recovery.md for delivery, cancellation and recovery boundaries.
+See docs/job-lifecycle.md, docs/job-recovery.md and docs/running-job-recovery.md for delivery, cancellation, fencing and recovery boundaries.
 
 ## Explorer additions
 
@@ -167,7 +168,6 @@ See docs/load-testing.md. Measured VPS results still require a representative de
 
 - Crawl retries are implemented for transient page fetch failures; durable per-page
   deferred retries remain follow-up work.
-- Processor fencing/recovery for ambiguous running jobs after worker loss remains; terminal failed crawl/index jobs now have operator dead-letter/retry controls while their outbox metadata is retained.
 - External quota/expiration notification delivery remains; in-product warnings are implemented.
 - Load tests with actual measured VPS results and VPS restore rehearsal remain release evidence work.
 
