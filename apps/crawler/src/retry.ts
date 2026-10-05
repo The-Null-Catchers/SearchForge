@@ -43,10 +43,12 @@ export async function retryPageFetch(
     sleep?: (delayMs: number) => Promise<void>;
     now?: () => number;
     random?: () => number;
+    startAttempt?: number;
   }
 ): Promise<SafeFetchResult> {
   const sleep = hooks.sleep ?? (delay => new Promise(resolve => setTimeout(resolve, delay)));
-  for (let attempt = 1; ; attempt += 1) {
+  const startAttempt = Math.max(1, Math.floor(hooks.startAttempt ?? 1));
+  for (let attempt = startAttempt; ; attempt += 1) {
     await hooks.checkActive();
     let response: SafeFetchResult | undefined;
     try { response = await fetchPage(); }
