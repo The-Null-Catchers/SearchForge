@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { retryAfterMs, retryPageFetch, retryableNetworkError } from "./retry.js";
+import { RetryDeferred, retryAfterMs, retryPageFetch, retryableNetworkError } from "./retry.js";
 const policy = { retryMaxAttempts: 3, retryBaseDelayMs: 100, retryMaxDelayMs: 2000 };
 const response = (status: number, retryAfter?: string) => ({ status, url: "https://example.com",
   headers: new Headers(retryAfter ? { "retry-after": retryAfter } : {}), body: new Uint8Array(), elapsedMs: 1 });
@@ -24,10 +24,27 @@ describe("page retry policy", () => {
     await retryPageFetch(fetch, policy, h);
     expect(h.sleep.mock.calls.reduce((sum, [ms]) => sum + ms, 0)).toBe(1000);
   });
-  it("does not shorten a Retry-After exceeding its bounded wait", async () => {
+  it("defers a Retry-After exceeding the bounded in-worker wait", async () => {
+    const now = Date.parse("2026-10-01T00:00:00Z");
     const fetch = vi.fn().mockResolvedValue(response(429, "3600"));
-    const h = hooks();
-    expect((await retryPageFetch(fetch, policy, h)).status).toBe(429);
+    const h = { ...hooks(), now: () => now };
+    let deferred: RetryDeferred | undefined;
+    try {
+      await retryPageFetch(fetch, policy, h);
+    } catch (error) {
+      if (error instanceof RetryDeferred) deferred = error;
+      else throw error;
+    }
+    expect(deferred?.response.status).toBe(429);
+    expect(deferred?.nextAttempt).toBe(2);
+    expect(deferred?.retryAt.toISOString()).toBe("2026-10-01T01:00:00.000Z");
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(h.sleep).not.toHaveBeenCalled();
+  });
+  it("resumes at a persisted attempt and does not reset the retry budget", async () => {
+    const fetch = vi.fn().mockResolvedValue(response(503));
+    const h = { ...hooks(), startAttempt: 3 };
+    expect((await retryPageFetch(fetch, policy, h)).status).toBe(503);
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(h.sleep).not.toHaveBeenCalled();
   });
