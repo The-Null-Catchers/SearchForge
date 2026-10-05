@@ -27,6 +27,7 @@ const failed = new Counter({ name: "searchforge_cleanup_jobs_failed_total", help
 const active = new Gauge({ name: "searchforge_cleanup_jobs_active", help: "Active cleanup jobs", registers: [metrics] });
 const outboxPurged = new Counter({ name: "searchforge_outbox_rows_purged_total", help: "Terminal outbox rows purged after retention", registers: [metrics] });
 const runningRecovered = new Counter({ name: "searchforge_running_jobs_recovered_total", help: "Stale running crawl/index jobs fenced and requeued", registers: [metrics] });
+const deferredCrawlsScheduled = new Counter({ name: "searchforge_deferred_crawls_scheduled_total", help: "Crawl jobs scheduled because deferred pages became due", registers: [metrics] });
 
 const cleanup = new IndexCleanup(db, storagePath);
 const sourceCleanup = new SourceCleanup(db, storagePath);
@@ -87,6 +88,8 @@ function tick() {
   if (tickInFlight) return tickInFlight;
   tickInFlight = (async () => {
     try {
+      const deferred = await dispatcher.scheduleDeferredCrawls();
+      if (deferred.scheduled > 0) deferredCrawlsScheduled.inc(deferred.scheduled);
       await dispatcher.schedule();
       const runningRecovery = await dispatcher.recoverStaleRunning(new Date(), runningStaleMs);
       if (runningRecovery.recovered) {

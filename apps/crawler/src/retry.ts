@@ -43,7 +43,7 @@ export async function retryPageFetch(
     sleep?: (delayMs: number) => Promise<void>;
     now?: () => number;
     random?: () => number;
-    startAttempt?: number;
+    startAttempt?: number | undefined;
   }
 ): Promise<SafeFetchResult> {
   const sleep = hooks.sleep ?? (delay => new Promise(resolve => setTimeout(resolve, delay)));
