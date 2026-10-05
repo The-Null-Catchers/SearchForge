@@ -19,7 +19,7 @@ async function verifyAccountSecurityRoutes(page) {
 
   await page.goto(`${baseUrl}/reset-password`, { waitUntil: "networkidle", timeout: 30_000 });
   await page.getByRole("heading", { name: "Choose a new password", exact: true }).waitFor({ timeout: 5_000 });
-  assert((await page.getByRole("alert").textContent())?.includes("missing its token"), "Reset-password missing-token warning did not render");
+  assert(await page.getByText("The link is missing its token. Open the complete link from your email or request a new link.", { exact: true }).isVisible(), "Reset-password missing-token warning did not render");
   assert(await page.getByRole("button", { name: "Update password", exact: true }).isDisabled(), "Reset-password submit should be disabled without a token");
 
   await page.goto(`${baseUrl}/reset-password?token=browser-e2e-placeholder`, { waitUntil: "networkidle", timeout: 30_000 });
@@ -27,11 +27,11 @@ async function verifyAccountSecurityRoutes(page) {
   await page.getByLabel("Confirm password", { exact: true }).fill("BrowserE2EPassword456!");
   assert(!page.url().includes("token="), "Reset token was not scrubbed from browser history");
   await page.getByRole("button", { name: "Update password", exact: true }).click();
-  assert((await page.getByRole("alert").textContent())?.includes("do not match"), "Reset-password client validation did not reject mismatched passwords");
+  assert(await page.getByText("The passwords do not match.", { exact: true }).isVisible(), "Reset-password client validation did not reject mismatched passwords");
 
   await page.goto(`${baseUrl}/verify-email`, { waitUntil: "networkidle", timeout: 30_000 });
   await page.getByRole("heading", { name: "Verify your email", exact: true }).waitFor({ timeout: 5_000 });
-  assert((await page.getByRole("alert").textContent())?.includes("missing its token"), "Verify-email missing-token warning did not render");
+  assert(await page.getByText("The link is missing its token. Open the complete link from your email or request a new link.", { exact: true }).isVisible(), "Verify-email missing-token warning did not render");
   assert(await page.getByRole("button", { name: "Verify email", exact: true }).isDisabled(), "Verify-email submit should be disabled without a token");
 
   await page.goto(`${baseUrl}/verify-email?token=browser-e2e-placeholder`, { waitUntil: "networkidle", timeout: 30_000 });
