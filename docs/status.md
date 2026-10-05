@@ -24,19 +24,13 @@ engine is used. Rust/Go search nodes are future extensions, not implemented.
 - Version allocation serialized across workers using PostgreSQL advisory locks.
 - Migration runner and dependency ordering in Compose.
 - Incremental conditional recrawl with stored links for 304 responses.
-- Dart SDK search/filter/pagination/autocomplete/click/error handling (CI passed).
+- Dart SDK search/filter/pagination/autocomplete/click/error handling.
 
-Integration CI passed registration, tenant isolation, async indexing, bilingual search,
-rebuild/rollback, incremental crawling and refresh-token reuse detection. Dart analysis
-and three SDK tests passed. The latest local run and CI passed 30 unit tests, builds and
-type checking.
-
-Account recovery/verification pages and container startup still require end-to-end
-verification. All container images built successfully in CI, including the pinned MinIO
-source build. Explicit IPv4 loopback health probes fixed the Compose startup failure.
-CI run 36715821234 passed all four jobs: Node build/unit/types/integration, Dart,
-security baseline and full container smoke. Caddy routed API readiness and the
-login page successfully. Real Chromium dashboard smoke coverage is now included in container CI.
+Integration CI covers registration, tenant isolation, async indexing, bilingual search,
+rebuild/rollback, incremental crawling and refresh-token reuse detection. Node builds,
+unit tests, type checking, repeatable migrations, PostgreSQL/Redis integration,
+security baseline, Dart SDK checks and full Compose/Chromium smoke all run in CI.
+Account recovery and verification browser flows are also covered.
 
 ## Job lifecycle additions
 
@@ -47,14 +41,17 @@ login page successfully. Real Chromium dashboard smoke coverage is now included 
 - Regression scenarios added to PostgreSQL/Redis integration CI.
 - Queued-job recovery after acknowledged Redis job loss, rotating bounded checks,
   concurrent dispatchers and Redis outage retries.
-- Crawl/index deliveries now claim the durable BullMQ execution ID and heartbeat while running.
+- Crawl/index deliveries claim a durable BullMQ execution ID and heartbeat while running.
 - Stale running jobs are recovered only after the corresponding PostgreSQL processor advisory lock is confirmed released; recovery rotates the execution ID and durable outbox dispatch state before replay.
 - Failed crawl/index jobs are exposed through a project dead-letter view and can be
   transactionally re-queued by admins while durable outbox metadata is retained.
 - Operator retries allocate a fresh BullMQ job ID, reject overlapping source/index work,
   and are audited without copying failure text into audit metadata.
+- Transient crawl page failures use bounded retries, while long server-directed `Retry-After`
+  delays are persisted in PostgreSQL and rescheduled durably across restarts.
 
-See docs/job-lifecycle.md, docs/job-recovery.md and docs/running-job-recovery.md for delivery, cancellation, fencing and recovery boundaries.
+See docs/job-lifecycle.md, docs/job-recovery.md, docs/running-job-recovery.md and
+docs/crawl-retries.md for delivery, cancellation, fencing and recovery boundaries.
 
 ## Explorer additions
 
@@ -64,13 +61,12 @@ See docs/job-lifecycle.md, docs/job-recovery.md and docs/running-job-recovery.md
 - Editable crawl rules, crawl-page filters and query-bound keyset pagination.
 - Durable developer document field editing with immutable-segment rebuilds.
 - Viewer/developer permissions, bounded URL/rule/document validation and safe links.
-- 37 local unit tests plus additional integration regression scenarios.
 
 See docs/explorers.md and docs/document-editing.md. Integration/container CI verifies the expanded workflow.
 
 ## Analytics correctness
 
-Search and click consistency: search and click recording now respect `analyticsEnabled`.
+Search and click consistency: search and click recording respect `analyticsEnabled`.
 Clicks referencing search events must belong to the authenticated project and
 match the event query. Search/explain share enabled synonyms; explain ignores
 pagination so it can inspect a matching document outside the requested page.
@@ -88,8 +84,10 @@ stops new records; it does not erase historical records.
 - PostgreSQL serialization prevents concurrent API writers or crawler workers from oversubscribing configured limits.
 - Dashboard usage warnings and API-key active/expiring/expired/revoked states are available in-product.
 - Control changes are audited without persisting or disclosing raw secrets.
+- Durable operational email alerts notify verified owners/admins for quota warnings/exceeded states and API-key expiration windows.
+- Notification receipts are deduplicated in PostgreSQL, claimed with `SKIP LOCKED`, recover interrupted sends and retry SMTP failures without blocking request paths.
 
-See docs/api-key-controls.md and docs/project-quotas.md for enforcement and privacy boundaries.
+See docs/api-key-controls.md, docs/project-quotas.md and docs/notifications.md for enforcement, delivery and privacy boundaries.
 
 ## Demo seeding
 
@@ -118,8 +116,9 @@ See docs/embeddable-search.md.
 - Backup sets include manifests and SHA-256 checksums.
 - Restore rehearsal uses isolated PostgreSQL/container volumes and does not overwrite production data.
 - Redis is intentionally excluded because durable queue/outbox state is authoritative in PostgreSQL.
+- Release-evidence tooling records the exact Git SHA, corpus description/count, host context, load results, restore output and evidence checksums.
 
-See docs/backup-restore.md. A measured VPS restore rehearsal is still release evidence work.
+See docs/backup-restore.md and docs/release-evidence.md. A measured rehearsal against a backup from the target VPS remains release evidence, not an unverified product claim.
 
 ## OpenTelemetry tracing
 
@@ -135,7 +134,7 @@ See docs/observability.md.
 
 - A real Chromium flow runs against the built Docker Compose stack through Caddy.
 - CI seeds deterministic demo tenants and signs in through the actual browser form.
-- Dashboard overview, tenant project loading, theme switching, keyboard command palette, Analytics navigation, and authenticated reload are checked.
+- Dashboard overview, tenant project loading, theme switching, keyboard command palette, Analytics navigation, account-security flows and authenticated reload are checked.
 - Unexpected page exceptions fail the job.
 - Success/failure screenshots and JSON results are uploaded as short-retention CI artifacts.
 
@@ -147,8 +146,10 @@ See docs/browser-e2e.md.
 - It records throughput, error rate/status distribution, wall-clock p50/p95/p99/max latency, and engine-reported processing latency.
 - Concurrency, warmup, timeout, bilingual query mix, error thresholds and optional p95 thresholds are configurable.
 - Structured JSON evidence is produced without persisting API keys.
+- A manual GitHub Actions release workflow captures independent HTTPS load evidence with corpus metadata and runner hardware context.
+- A VPS collector combines load evidence with isolated restore rehearsal output and SHA-256 checksums.
 
-See docs/load-testing.md. Measured VPS results still require a representative deployed corpus and hardware description.
+See docs/load-testing.md and docs/release-evidence.md. Actual performance numbers remain intentionally unpublished until a representative deployed corpus and hardware profile are measured.
 
 ## Recent search-core completion
 
@@ -159,22 +160,23 @@ See docs/load-testing.md. Measured VPS results still require a representative de
 
 ## Typo dictionary completion
 
-- Immutable segments now persist a bounded deletion dictionary for typo candidate pruning.
+- Immutable segments persist a bounded deletion dictionary for typo candidate pruning.
 - Search generates deletion keys per query and runs edit-distance scoring only on dictionary candidates.
 - Legacy segments without the dictionary rebuild it once when loaded, preserving backward compatibility.
 - Regression tests guard against full vocabulary iteration on typo queries.
 
-## Remaining before MVP release
+## Remaining before MVP release evidence is complete
 
-- Crawl retries are implemented for transient page fetch failures; durable per-page
-  deferred retries remain follow-up work.
-- External quota/expiration notification delivery remains; in-product warnings are implemented.
-- Load tests with actual measured VPS results and VPS restore rehearsal remain release evidence work.
+The functional MVP is implemented. Remaining work is environment-specific validation evidence:
+
+- run measured search load against a representative deployed VPS corpus and record p50/p95/p99, throughput, error rate, corpus size and hardware profile;
+- create a backup from that target deployment and complete the isolated restore rehearsal;
+- attach/review the generated evidence bundle before publishing any benchmark or recovery claim.
 
 No performance numbers are claimed without a measured corpus and hardware profile.
 
 ## Deletion lifecycle
 
-Owner-only project deletion now fences all project writes, revokes keys, drains source/index processors, removes immutable index storage and project-owned data, and retains only a scrubbed tombstone, durable cleanup receipt and security audit trail. See [project deletion](project-deletion.md).
+Owner-only project deletion fences all project writes, revokes keys, drains source/index processors, removes immutable index storage and project-owned data, and retains only a scrubbed tombstone, durable cleanup receipt and security audit trail. See [project deletion](project-deletion.md).
 
-Confirmed, admin-only index deletion fences writes and drains builders before file/metadata erasure. Source deletion fences crawling, queues replacement builds, prevents rollback resurrection and purges obsolete segment files while preserving other documents. See [index deletion](index-deletion.md). The current local suite passes 50 unit tests; PostgreSQL/Redis scenarios verify producer draining, storage failure/retry, delivery recovery and retained-segment inspection in CI.
+Confirmed, admin-only index deletion fences writes and drains builders before file/metadata erasure. Source deletion fences crawling, queues replacement builds, prevents rollback resurrection and purges obsolete segment files while preserving other documents. See [index deletion](index-deletion.md). PostgreSQL/Redis scenarios verify producer draining, storage failure/retry, delivery recovery and retained-segment inspection in CI.

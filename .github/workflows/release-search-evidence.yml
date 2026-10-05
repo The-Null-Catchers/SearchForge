@@ -1,0 +1,139 @@
+name: Release Search Load Evidence
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: Production SearchForge base URL (HTTPS)
+        required: true
+        type: string
+      index_slug:
+        description: Index slug
+        required: true
+        default: docs
+        type: string
+      requests:
+        description: Measured requests
+        required: true
+        default: "1000"
+        type: string
+      concurrency:
+        description: Concurrent clients
+        required: true
+        default: "20"
+        type: string
+      warmup:
+        description: Warmup requests
+        required: true
+        default: "50"
+        type: string
+      max_p95_ms:
+        description: Maximum acceptable wall-clock p95 latency in milliseconds
+        required: true
+        default: "100"
+        type: string
+      corpus_description:
+        description: Human-readable corpus description
+        required: true
+        type: string
+      document_count:
+        description: Indexed document count for this measurement
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  search-load-evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SEARCHFORGE_LOAD_BASE_URL: ${{ inputs.base_url }}
+      SEARCHFORGE_LOAD_API_KEY: ${{ secrets.SEARCHFORGE_RELEASE_API_KEY }}
+      SEARCHFORGE_LOAD_INDEX: ${{ inputs.index_slug }}
+      SEARCHFORGE_LOAD_REQUESTS: ${{ inputs.requests }}
+      SEARCHFORGE_LOAD_CONCURRENCY: ${{ inputs.concurrency }}
+      SEARCHFORGE_LOAD_WARMUP: ${{ inputs.warmup }}
+      SEARCHFORGE_LOAD_MAX_P95_MS: ${{ inputs.max_p95_ms }}
+      SEARCHFORGE_LOAD_OUTPUT: artifacts/release/search-load.json
+      SEARCHFORGE_RELEASE_CORPUS: ${{ inputs.corpus_description }}
+      SEARCHFORGE_RELEASE_DOCUMENT_COUNT: ${{ inputs.document_count }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Validate release inputs
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          [[ "$SEARCHFORGE_LOAD_BASE_URL" == https://* ]] || {
+            echo "base_url must use HTTPS"
+            exit 2
+          }
+          [[ -n "$SEARCHFORGE_LOAD_API_KEY" ]] || {
+            echo "Repository/environment secret SEARCHFORGE_RELEASE_API_KEY is required"
+            exit 2
+          }
+          [[ "$SEARCHFORGE_RELEASE_DOCUMENT_COUNT" =~ ^[1-9][0-9]*$ ]] || {
+            echo "document_count must be a positive integer"
+            exit 2
+          }
+
+      - name: Capture runner and corpus metadata
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p artifacts/release
+          uname -a > artifacts/release/runner-uname.txt
+          lscpu > artifacts/release/runner-cpu.txt
+          free -b > artifacts/release/runner-memory.txt
+          node <<'NODE' > artifacts/release/manifest.json
+          const manifest = {
+            evidenceVersion: 1,
+            generatedAt: new Date().toISOString(),
+            gitSha: process.env.GITHUB_SHA,
+            runner: "github-hosted-ubuntu",
+            target: {
+              baseUrl: process.env.SEARCHFORGE_LOAD_BASE_URL,
+              indexSlug: process.env.SEARCHFORGE_LOAD_INDEX
+            },
+            corpus: {
+              description: process.env.SEARCHFORGE_RELEASE_CORPUS,
+              documentCount: Number(process.env.SEARCHFORGE_RELEASE_DOCUMENT_COUNT)
+            },
+            load: {
+              requests: Number(process.env.SEARCHFORGE_LOAD_REQUESTS),
+              concurrency: Number(process.env.SEARCHFORGE_LOAD_CONCURRENCY),
+              warmupRequests: Number(process.env.SEARCHFORGE_LOAD_WARMUP),
+              maxP95Ms: Number(process.env.SEARCHFORGE_LOAD_MAX_P95_MS)
+            },
+            apiKeyIncluded: false
+          };
+          process.stdout.write(`${JSON.stringify(manifest, null, 2)}\n`);
+          NODE
+
+      - name: Run measured search load
+        run: node tests/load/search-load.mjs
+
+      - name: Hash evidence bundle
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          cd artifacts/release
+          find . -maxdepth 1 -type f ! -name checksums.sha256 -printf '%P\0' \
+            | sort -z \
+            | xargs -0 sha256sum > checksums.sha256
+
+      - name: Upload release evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: searchforge-release-search-evidence-${{ github.run_id }}
+          path: artifacts/release
+          if-no-files-found: error
+          retention-days: 30
