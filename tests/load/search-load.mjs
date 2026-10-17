@@ -74,7 +74,10 @@ async function oneRequest(sequence) {
     const body = await response.json().catch(() => null);
     const latencyMs = performance.now() - started;
     if (!response.ok) {
-      return { ok: false, status: response.status, latencyMs, error: body?.error?.code ?? body?.error?.message ?? "HTTP_ERROR" };
+      return { ok: false, status: response.status, latencyMs, error: body?.error?.code ?? "HTTP_ERROR" };
+    }
+    if (!body || !Array.isArray(body.hits) || !Number.isFinite(body.total) || !Number.isFinite(body.processingTimeMs)) {
+      return { ok: false, status: response.status, latencyMs, error: "INVALID_SEARCH_RESPONSE" };
     }
     return {
       ok: true,
@@ -157,7 +160,7 @@ const report = {
   thresholds: {
     maxErrorRate,
     maxP95Ms,
-    passed: errorRate <= maxErrorRate && (maxP95Ms === null || percentile(wallLatencies, 0.95) <= maxP95Ms)
+    passed: successes.length > 0 && errorRate <= maxErrorRate && (maxP95Ms === null || percentile(wallLatencies, 0.95) <= maxP95Ms)
   }
 };
 

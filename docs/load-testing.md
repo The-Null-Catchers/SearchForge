@@ -54,7 +54,7 @@ The JSON report records:
 - engine-reported p50/p95/p99/max `processingTimeMs` when available
 - exact run configuration and threshold result
 
-The report never stores the API key.
+The report never stores the API key. HTTP 200 responses are counted as successful only when the JSON contains a valid search result shape (`hits` array, numeric `total`, and numeric `processingTimeMs`). Invalid payloads are counted as `INVALID_SEARCH_RESPONSE` failures. A run with zero successful requests always fails, even when the configured maximum error rate is 100%. These checks prevent misleading zero-latency or successful reports during upstream outages. The regression checks run in CI with `node --test tests/load/search-load.test.mjs`.
 
 ## Release evidence
 
