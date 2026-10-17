@@ -16,6 +16,7 @@ cd "$ROOT_DIR"
 }
 
 command -v node >/dev/null || { echo "node is required" >&2; exit 1; }
+node scripts/validate-release-target.mjs "$SEARCHFORGE_LOAD_BASE_URL"
 command -v docker >/dev/null || { echo "docker is required" >&2; exit 1; }
 command -v sha256sum >/dev/null || { echo "sha256sum is required" >&2; exit 1; }
 docker compose version >/dev/null
