@@ -55,7 +55,7 @@ jobs:
       - run: pnpm test
       - name: Validate load-harness measurement integrity
         run: node --test tests/load/search-load.test.mjs
-      - run: pnpm typecheck
+      - name: Validate release evidence metadata\n        run: node --test tests/load/release-manifest.test.mjs\n      - run: pnpm typecheck
       - run: pnpm db:migrate
       - run: pnpm db:migrate
       - run: node tests/integration/platform.mjs
