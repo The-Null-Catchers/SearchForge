@@ -4,7 +4,7 @@ SearchForge does not publish performance or recovery claims without measured evi
 
 ## Full VPS evidence
 
-Run the full evidence collector on the deployed Linux host after creating a fresh backup set. It requires a search-only API key; the key is consumed from the environment and is never written to the evidence bundle.
+Run the full evidence collector on the deployed Linux host after creating a fresh backup set. The release collector requires a clean HTTPS origin (without URL credentials, path, query or fragment); development-only HTTP and localhost endpoints are rejected before evidence collection. This is a release evidence requirement, not a restriction on local development. It requires a search-only API key; the key is consumed from the environment and is never written to the evidence bundle.
 
 ```bash
 BACKUP_DIR="$(./scripts/backup.sh 2>&1 | sed -n 's/^\[backup\] complete: //p' | tail -1)"
