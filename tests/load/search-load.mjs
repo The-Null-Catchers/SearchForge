@@ -74,7 +74,7 @@ async function oneRequest(sequence) {
     const body = await response.json().catch(() => null);
     const latencyMs = performance.now() - started;
     if (!response.ok) {
-      return { ok: false, status: response.status, latencyMs, error: body?.error?.code ?? "HTTP_ERROR" };
+      return { ok: false, status: response.status, latencyMs, error: "HTTP_ERROR" };
     }
     if (!body || !Array.isArray(body.hits) || !Number.isFinite(body.total) || !Number.isFinite(body.processingTimeMs)) {
       return { ok: false, status: response.status, latencyMs, error: "INVALID_SEARCH_RESPONSE" };
@@ -91,7 +91,7 @@ async function oneRequest(sequence) {
       ok: false,
       status: 0,
       latencyMs: performance.now() - started,
-      error: error?.name === "AbortError" ? "TIMEOUT" : String(error?.message ?? error)
+      error: error?.name === "AbortError" ? "TIMEOUT" : "NETWORK_ERROR"
     };
   } finally {
     clearTimeout(timeout);
