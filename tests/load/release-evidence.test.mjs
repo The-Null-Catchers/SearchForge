@@ -18,7 +18,7 @@ function run(changes = {}) {
     const report = {
       target: { ...manifest.target },
       configuration: { requests: 3, concurrency: 2, warmupRequests: 1 },
-      measurement: { successes: 3, failures: 0, errorRate: 0, wallLatencyMs: { p50: 8, p95: 11, p99: 13, max: 15 } },
+      measurement: { successes: 3, failures: 0, errorRate: 0, durationMs: 1000, throughputRps: 3, wallLatencyMs: { p50: 8, p95: 11, p99: 13, max: 15 } },
       thresholds: { maxErrorRate: 0, maxP95Ms: null, passed: true }
     };
     Object.assign(report, changes);
@@ -41,3 +41,6 @@ test("rejects invalid success counts", () => assert.notEqual(run({ measurement: 
 test("rejects missing latency percentiles", () => assert.notEqual(run({ measurement: { successes: 3, failures: 0, errorRate: 0 } }), 0));
 test("rejects inverted latency percentile order", () => assert.notEqual(run({ measurement: { successes: 3, failures: 0, errorRate: 0, wallLatencyMs: { p50: 14, p95: 11, p99: 13, max: 15 } } }), 0));
 test("rejects negative latencies", () => assert.notEqual(run({ measurement: { successes: 3, failures: 0, errorRate: 0, wallLatencyMs: { p50: -1, p95: 11, p99: 13, max: 15 } } }), 0));
+
+test("rejects missing throughput measurement", () => assert.notEqual(run({ measurement: { successes: 3, failures: 0, errorRate: 0, durationMs: 1000, wallLatencyMs: { p50: 8, p95: 11, p99: 13, max: 15 } } }), 0));
+test("rejects inconsistent throughput", () => assert.notEqual(run({ measurement: { successes: 3, failures: 0, errorRate: 0, durationMs: 1000, throughputRps: 99, wallLatencyMs: { p50: 8, p95: 11, p99: 13, max: 15 } } }), 0));
