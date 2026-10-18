@@ -55,6 +55,8 @@ jobs:
       - run: pnpm test
       - name: Validate load-harness measurement integrity
         run: node --test tests/load/search-load.test.mjs
+      - name: Validate release HTTPS target restrictions
+        run: node --test tests/load/release-target.test.mjs
       - run: pnpm typecheck
       - run: pnpm db:migrate
       - run: pnpm db:migrate
