@@ -67,8 +67,8 @@ const manifest = {
   load: {
     requests: Number(process.env.SEARCHFORGE_LOAD_REQUESTS || 500),
     concurrency: Number(process.env.SEARCHFORGE_LOAD_CONCURRENCY || 10),
-    warmupRequests: Number(process.env.SEARCHFORGE_LOAD_WARMUP || 25),
-    maxErrorRate: Number(process.env.SEARCHFORGE_LOAD_MAX_ERROR_RATE || 0.01),
+    warmupRequests: Number(process.env.SEARCHFORGE_LOAD_WARMUP ?? Math.min(25, Number(process.env.SEARCHFORGE_LOAD_REQUESTS ?? 500))),
+    maxErrorRate: Number(process.env.SEARCHFORGE_LOAD_MAX_ERROR_RATE ?? 0.01),
     maxP95Ms: process.env.SEARCHFORGE_LOAD_MAX_P95_MS ? Number(process.env.SEARCHFORGE_LOAD_MAX_P95_MS) : null
   },
   restoreRehearsal: true,
