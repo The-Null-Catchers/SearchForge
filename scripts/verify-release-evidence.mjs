@@ -23,7 +23,14 @@ try {
     expected.maxP95Ms !== report.thresholds?.maxP95Ms ||
     !Number.isInteger(manifest.corpus?.documentCount) ||
     manifest.corpus.documentCount <= 0 ||
+    !Number.isInteger(expected.requests) || expected.requests <= 0 ||
+    !Number.isInteger(report.measurement?.successes) ||
+    !Number.isInteger(report.measurement?.failures) ||
     report.measurement?.successes <= 0 ||
+    report.measurement?.failures < 0 ||
+    !Number.isFinite(report.measurement?.errorRate) ||
+    Math.abs(report.measurement.errorRate - report.measurement.failures / expected.requests) > 0.000001 ||
+    report.measurement.errorRate > expected.maxErrorRate + 0.000001 ||
     report.measurement?.failures + report.measurement?.successes !== expected.requests ||
     report.thresholds?.passed !== true
   ) throw new Error("release evidence is incomplete, failed, or inconsistent");
