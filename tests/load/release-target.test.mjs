@@ -19,6 +19,12 @@ for (const target of [
   "https://search.example.com/#secret",
   "http://localhost:8080",
   "https://localhost",
+  "https://127.0.0.1",
+  "https://192.168.1.10",
+  "https://169.254.169.254",
+  "https://[::1]",
+  "https://[2001:db8::1]",
+  "https://internal",
   "not a URL"
 ]) {
   test(`rejects unsafe release target: ${target}`, () => {

@@ -1,3 +1,5 @@
+import { isIP } from "node:net";
+
 const candidate = process.argv[2];
 if (!candidate) {
   console.error("SEARCHFORGE_LOAD_BASE_URL is required");
@@ -19,7 +21,9 @@ if (
   url.pathname !== "/" ||
   !url.hostname ||
   url.hostname.endsWith(".localhost") ||
-  url.hostname === "localhost"
+  url.hostname === "localhost" ||
+  isIP(url.hostname.replace(/^\[|\]$/g, "")) !== 0 ||
+  !url.hostname.includes(".")
 ) {
   console.error("Release evidence requires an HTTPS origin without credentials, paths, query strings or fragments");
   process.exit(2);
