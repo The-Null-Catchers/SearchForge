@@ -81,6 +81,8 @@ echo "[release-evidence] running authenticated search load measurement"
 SEARCHFORGE_LOAD_OUTPUT="$OUT_DIR/search-load.json" \
   node tests/load/search-load.mjs 2>&1 | tee "$OUT_DIR/search-load.log"
 
+node scripts/verify-release-evidence.mjs "$OUT_DIR/manifest.json" "$OUT_DIR/search-load.json"
+
 echo "[release-evidence] running isolated restore rehearsal"
 ./scripts/restore-rehearsal.sh "$BACKUP_DIR" 2>&1 | tee "$OUT_DIR/restore-rehearsal.log"
 
