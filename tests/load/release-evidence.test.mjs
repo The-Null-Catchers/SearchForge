@@ -18,7 +18,7 @@ function run(changes = {}) {
     const report = {
       target: { ...manifest.target },
       configuration: { requests: 3, concurrency: 2, warmupRequests: 1 },
-      measurement: { successes: 3, failures: 0, errorRate: 0 },
+      measurement: { successes: 3, failures: 0, errorRate: 0, wallLatencyMs: { p50: 8, p95: 11, p99: 13, max: 15 } },
       thresholds: { maxErrorRate: 0, maxP95Ms: null, passed: true }
     };
     Object.assign(report, changes);
@@ -37,3 +37,7 @@ test("missing successful requests fails", () => assert.notEqual(run({ measuremen
 
 test("rejects mismatched error rate", () => assert.notEqual(run({ measurement: { successes: 2, failures: 1, errorRate: 0 } }), 0));
 test("rejects invalid success counts", () => assert.notEqual(run({ measurement: { successes: 2.5, failures: 0.5, errorRate: 0.166667 } }), 0));
+
+test("rejects missing latency percentiles", () => assert.notEqual(run({ measurement: { successes: 3, failures: 0, errorRate: 0 } }), 0));
+test("rejects inverted latency percentile order", () => assert.notEqual(run({ measurement: { successes: 3, failures: 0, errorRate: 0, wallLatencyMs: { p50: 14, p95: 11, p99: 13, max: 15 } } }), 0));
+test("rejects negative latencies", () => assert.notEqual(run({ measurement: { successes: 3, failures: 0, errorRate: 0, wallLatencyMs: { p50: -1, p95: 11, p99: 13, max: 15 } } }), 0));
