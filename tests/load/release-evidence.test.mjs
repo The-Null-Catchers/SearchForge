@@ -18,7 +18,7 @@ function run(changes = {}) {
     const report = {
       target: { ...manifest.target },
       configuration: { requests: 3, concurrency: 2, warmupRequests: 1 },
-      measurement: { successes: 3, failures: 0 },
+      measurement: { successes: 3, failures: 0, errorRate: 0 },
       thresholds: { maxErrorRate: 0, maxP95Ms: null, passed: true }
     };
     Object.assign(report, changes);
@@ -34,3 +34,6 @@ test("valid measurement passes", () => assert.equal(run(), 0));
 test("mismatched count fails", () => assert.notEqual(run({ configuration: { requests: 4, concurrency: 2, warmupRequests: 1 } }), 0));
 test("failed measurement fails", () => assert.notEqual(run({ thresholds: { maxErrorRate: 0, maxP95Ms: null, passed: false } }), 0));
 test("missing successful requests fails", () => assert.notEqual(run({ measurement: { successes: 0, failures: 3 } }), 0));
+
+test("rejects mismatched error rate", () => assert.notEqual(run({ measurement: { successes: 2, failures: 1, errorRate: 0 } }), 0));
+test("rejects invalid success counts", () => assert.notEqual(run({ measurement: { successes: 2.5, failures: 0.5, errorRate: 0.166667 } }), 0));
