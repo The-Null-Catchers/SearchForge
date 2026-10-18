@@ -32,6 +32,14 @@ try {
     Math.abs(report.measurement.errorRate - report.measurement.failures / expected.requests) > 0.000001 ||
     report.measurement.errorRate > expected.maxErrorRate + 0.000001 ||
     report.measurement?.failures + report.measurement?.successes !== expected.requests ||
+    !["p50", "p95", "p99", "max"].every(key =>
+      Number.isFinite(report.measurement?.wallLatencyMs?.[key]) &&
+      report.measurement.wallLatencyMs[key] >= 0
+    ) ||
+    report.measurement.wallLatencyMs.p50 > report.measurement.wallLatencyMs.p95 ||
+    report.measurement.wallLatencyMs.p95 > report.measurement.wallLatencyMs.p99 ||
+    report.measurement.wallLatencyMs.p99 > report.measurement.wallLatencyMs.max ||
+    (expected.maxP95Ms !== null && report.measurement.wallLatencyMs.p95 > expected.maxP95Ms) ||
     report.thresholds?.passed !== true
   ) throw new Error("release evidence is incomplete, failed, or inconsistent");
   console.log("[release-evidence] manifest and measured results agree");
