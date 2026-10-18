@@ -22,6 +22,14 @@ if (
   !url.hostname ||
   url.hostname.endsWith(".localhost") ||
   url.hostname === "localhost" ||
+  url.hostname.endsWith(".local") ||
+  url.hostname.endsWith(".internal") ||
+  url.hostname.endsWith(".test") ||
+  url.hostname.endsWith(".invalid") ||
+  url.hostname.endsWith(".example") ||
+  url.hostname.endsWith(".onion") ||
+  url.hostname.endsWith(".home.arpa") ||
+  url.hostname.endsWith(".") ||
   isIP(url.hostname.replace(/^\[|\]$/g, "")) !== 0 ||
   !url.hostname.includes(".")
 ) {

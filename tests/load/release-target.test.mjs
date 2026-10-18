@@ -25,6 +25,14 @@ for (const target of [
   "https://[::1]",
   "https://[2001:db8::1]",
   "https://internal",
+  "https://search.local",
+  "https://search.internal",
+  "https://search.test",
+  "https://search.invalid",
+  "https://search.example",
+  "https://search.onion",
+  "https://search.home.arpa",
+  "https://search.example.com.",
   "not a URL"
 ]) {
   test(`rejects unsafe release target: ${target}`, () => {
