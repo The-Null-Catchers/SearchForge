@@ -65,3 +65,13 @@ test("never passes a run without successes even with a 100% error allowance", as
   assert.equal(report.thresholds.passed, false);
   assert.equal(report.measurement.successes, 0);
 });
+
+test("never persists untrusted HTTP error details", async () => {
+  const sensitive = "private-token-should-not-appear";
+  const { exitCode, report } = await runHarness(503, {
+    error: { code: sensitive, message: sensitive }
+  });
+  assert.equal(exitCode, 1);
+  assert.deepEqual(report.measurement.errorCounts, { HTTP_ERROR: 3 });
+  assert.equal(JSON.stringify(report).includes(sensitive), false);
+});
