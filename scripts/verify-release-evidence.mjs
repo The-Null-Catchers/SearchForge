@@ -40,6 +40,11 @@ try {
     report.measurement.wallLatencyMs.p95 > report.measurement.wallLatencyMs.p99 ||
     report.measurement.wallLatencyMs.p99 > report.measurement.wallLatencyMs.max ||
     (expected.maxP95Ms !== null && report.measurement.wallLatencyMs.p95 > expected.maxP95Ms) ||
+    !Number.isFinite(report.measurement?.durationMs) ||
+    report.measurement.durationMs <= 0 ||
+    !Number.isFinite(report.measurement?.throughputRps) ||
+    report.measurement.throughputRps <= 0 ||
+    Math.abs(report.measurement.throughputRps - expected.requests * 1000 / report.measurement.durationMs) > Math.max(0.02, report.measurement.throughputRps * 0.001) ||
     report.thresholds?.passed !== true
   ) throw new Error("release evidence is incomplete, failed, or inconsistent");
   console.log("[release-evidence] manifest and measured results agree");
