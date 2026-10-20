@@ -48,7 +48,9 @@ cat "$BACKUP_DIR/postgres.dump" | docker exec -i "$PG_CONTAINER" pg_restore \
   --username=searchforge --dbname=searchforge --no-owner --no-privileges --exit-on-error
 
 echo "[restore-test] restored database objects:"
-docker exec "$PG_CONTAINER" psql -U searchforge -d searchforge -Atc "select count(*) from pg_catalog.pg_tables where schemaname='public';"
+PG_TABLE_COUNT="$(docker exec "$PG_CONTAINER" psql -U searchforge -d searchforge -Atc "select count(*) from pg_catalog.pg_tables where schemaname='public';")"
+echo "$PG_TABLE_COUNT"
+[[ "$PG_TABLE_COUNT" =~ ^[1-9][0-9]*$ ]] || { echo "[restore-test] restored PostgreSQL schema has no public tables" >&2; exit 1; }
 
 echo "[restore-test] restoring index and object archives into isolated volumes"
 docker volume create "$INDEX_VOLUME" >/dev/null
@@ -64,6 +66,8 @@ MINIO_COUNT="$(docker run --rm -v "$MINIO_VOLUME:/data:ro" alpine:3.22 sh -ec 'f
 
 echo "[restore-test] index files: $INDEX_COUNT"
 echo "[restore-test] object files: $MINIO_COUNT"
+[[ "$INDEX_COUNT" =~ ^[1-9][0-9]*$ ]] || { echo "[restore-test] restored index archive has no files" >&2; exit 1; }
+[[ "$MINIO_COUNT" =~ ^[1-9][0-9]*$ ]] || { echo "[restore-test] restored object archive has no files" >&2; exit 1; }
 echo "[restore-test] rehearsal succeeded"
 echo "[restore-test] retained volumes for inspection: $INDEX_VOLUME $MINIO_VOLUME"
 echo "[restore-test] remove those isolated rehearsal volumes when finished inspecting them"
