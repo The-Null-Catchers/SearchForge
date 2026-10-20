@@ -20,12 +20,20 @@ grep -qx 'searchforge_backup_version=1' "$BACKUP_DIR/manifest.txt" || {
   exit 1
 }
 
-STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+STAMP="$(date -u +%Y%m%dT%H%M%SZ)-$"
 PG_CONTAINER="searchforge-restore-pg-$STAMP"
 INDEX_VOLUME="searchforge_restore_index_$STAMP"
 MINIO_VOLUME="searchforge_restore_minio_$STAMP"
 PASSWORD="restore-rehearsal-$STAMP"
 RESTORE_SUCCEEDED=0
+
+# Refuse name collisions before registering destructive exit cleanup.
+if docker container inspect "$PG_CONTAINER" >/dev/null 2>&1 ||
+   docker volume inspect "$INDEX_VOLUME" >/dev/null 2>&1 ||
+   docker volume inspect "$MINIO_VOLUME" >/dev/null 2>&1; then
+  echo "[restore-test] isolated Docker resource name already exists; refusing to reuse it" >&2
+  exit 1
+fi
 
 cleanup() {
   docker rm -f "$PG_CONTAINER" >/dev/null 2>&1 || true
