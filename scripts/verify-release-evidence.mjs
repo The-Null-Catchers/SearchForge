@@ -45,6 +45,10 @@ try {
     !Number.isFinite(report.measurement?.throughputRps) ||
     report.measurement.throughputRps <= 0 ||
     Math.abs(report.measurement.throughputRps - expected.requests * 1000 / report.measurement.durationMs) > Math.max(0.02, report.measurement.throughputRps * 0.001) ||
+    !Number.isFinite(Date.parse(report.measurement?.startedAt)) ||
+    !Number.isFinite(Date.parse(report.measurement?.finishedAt)) ||
+    Date.parse(report.measurement.finishedAt) < Date.parse(report.measurement.startedAt) ||
+    Math.abs(Date.parse(report.measurement.finishedAt) - Date.parse(report.measurement.startedAt) - report.measurement.durationMs) > 2000 ||
     report.thresholds?.passed !== true
   ) throw new Error("release evidence is incomplete, failed, or inconsistent");
   console.log("[release-evidence] manifest and measured results agree");

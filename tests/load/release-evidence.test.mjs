@@ -18,7 +18,7 @@ function run(changes = {}) {
     const report = {
       target: { ...manifest.target },
       configuration: { requests: 3, concurrency: 2, warmupRequests: 1 },
-      measurement: { successes: 3, failures: 0, errorRate: 0, durationMs: 1000, throughputRps: 3, wallLatencyMs: { p50: 8, p95: 11, p99: 13, max: 15 } },
+      measurement: { successes: 3, failures: 0, errorRate: 0, startedAt: "2026-10-19T10:00:00.000Z", finishedAt: "2026-10-19T10:00:01.000Z", durationMs: 1000, throughputRps: 3, wallLatencyMs: { p50: 8, p95: 11, p99: 13, max: 15 } },
       thresholds: { maxErrorRate: 0, maxP95Ms: null, passed: true }
     };
     Object.assign(report, changes);
@@ -44,3 +44,6 @@ test("rejects negative latencies", () => assert.notEqual(run({ measurement: { su
 
 test("rejects missing throughput measurement", () => assert.notEqual(run({ measurement: { successes: 3, failures: 0, errorRate: 0, durationMs: 1000, wallLatencyMs: { p50: 8, p95: 11, p99: 13, max: 15 } } }), 0));
 test("rejects inconsistent throughput", () => assert.notEqual(run({ measurement: { successes: 3, failures: 0, errorRate: 0, durationMs: 1000, throughputRps: 99, wallLatencyMs: { p50: 8, p95: 11, p99: 13, max: 15 } } }), 0));
+
+test("rejects missing benchmark timestamps", () => assert.notEqual(run({ measurement: { successes: 3, failures: 0, errorRate: 0, durationMs: 1000, throughputRps: 3, wallLatencyMs: { p50: 8, p95: 11, p99: 13, max: 15 } } }), 0));
+test("rejects reversed benchmark timestamps", () => assert.notEqual(run({ measurement: { successes: 3, failures: 0, errorRate: 0, startedAt: "2026-10-19T10:00:02Z", finishedAt: "2026-10-19T10:00:01Z", durationMs: 1000, throughputRps: 3, wallLatencyMs: { p50: 8, p95: 11, p99: 13, max: 15 } } }), 0));
