@@ -25,9 +25,13 @@ PG_CONTAINER="searchforge-restore-pg-$STAMP"
 INDEX_VOLUME="searchforge_restore_index_$STAMP"
 MINIO_VOLUME="searchforge_restore_minio_$STAMP"
 PASSWORD="restore-rehearsal-$STAMP"
+RESTORE_SUCCEEDED=0
 
 cleanup() {
   docker rm -f "$PG_CONTAINER" >/dev/null 2>&1 || true
+  if [[ "$RESTORE_SUCCEEDED" -ne 1 ]]; then
+    docker volume rm -f "$INDEX_VOLUME" "$MINIO_VOLUME" >/dev/null 2>&1 || true
+  fi
 }
 trap cleanup EXIT
 
@@ -68,6 +72,7 @@ echo "[restore-test] index files: $INDEX_COUNT"
 echo "[restore-test] object files: $MINIO_COUNT"
 [[ "$INDEX_COUNT" =~ ^[1-9][0-9]*$ ]] || { echo "[restore-test] restored index archive has no files" >&2; exit 1; }
 [[ "$MINIO_COUNT" =~ ^[1-9][0-9]*$ ]] || { echo "[restore-test] restored object archive has no files" >&2; exit 1; }
+RESTORE_SUCCEEDED=1
 echo "[restore-test] rehearsal succeeded"
 echo "[restore-test] retained volumes for inspection: $INDEX_VOLUME $MINIO_VOLUME"
 echo "[restore-test] remove those isolated rehearsal volumes when finished inspecting them"
