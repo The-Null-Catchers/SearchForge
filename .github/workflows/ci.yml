@@ -63,6 +63,8 @@ jobs:
         run: node --test tests/load/release-evidence.test.mjs
       - name: Validate isolated restore rehearsal safeguards
         run: node --test tests/load/restore-rehearsal.test.mjs
+      - name: Test backup overwrite prevention
+        run: node --test tests/load/backup-safety.test.mjs
       - run: pnpm typecheck
       - run: pnpm db:migrate
       - run: pnpm db:migrate
