@@ -11,6 +11,14 @@ mkdir -p "$OUT_DIR"
 OUT_DIR="$(cd "$OUT_DIR" && pwd)"
 chmod 700 "$OUT_DIR"
 
+# Refuse to overwrite a previous backup before quiescing application writers.
+for file in postgres.dump index-data.tar.gz minio-data.tar.gz manifest.txt checksums.sha256; do
+  if [[ -e "$OUT_DIR/$file" || -L "$OUT_DIR/$file" ]]; then
+    echo "[backup] backup output already contains $file; choose a new directory" >&2
+    exit 2
+  fi
+done
+
 command -v docker >/dev/null || { echo "docker is required" >&2; exit 1; }
 docker compose version >/dev/null
 command -v sha256sum >/dev/null || { echo "sha256sum is required" >&2; exit 1; }
