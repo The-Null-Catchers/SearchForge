@@ -21,3 +21,10 @@ test("failure cleanup removes temporary volumes but success retains them", () =>
   assert.match(content, /docker volume rm -f "\$INDEX_VOLUME" "\$MINIO_VOLUME"/);
   assert.match(content, /RESTORE_SUCCEEDED=1\s+echo "\[restore-test\] rehearsal succeeded"/);
 });
+
+test("resource collision checks precede cleanup trap", () => {
+  assert.match(content, /docker container inspect "\$PG_CONTAINER"/);
+  assert.match(content, /docker volume inspect "\$INDEX_VOLUME"/);
+  assert.match(content, /docker volume inspect "\$MINIO_VOLUME"/);
+  assert.ok(content.indexOf('docker volume inspect "$MINIO_VOLUME"') < content.indexOf("trap cleanup EXIT"));
+});
