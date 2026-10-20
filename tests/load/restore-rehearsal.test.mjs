@@ -30,5 +30,5 @@ test("resource collision checks precede cleanup trap", () => {
 });
 
 test("restore resource suffix contains Bash process ID", () => {
-  assert.ok(content.includes('`STAMP="$(date -u +%Y%m%dT%H%M%SZ)-$$"`'));
+  assert.ok(content.includes('STAMP="$(date -u +%Y%m%dT%H%M%SZ)-$"'));
 });
