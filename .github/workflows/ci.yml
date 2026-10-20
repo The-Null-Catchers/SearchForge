@@ -61,6 +61,8 @@ jobs:
         run: node --test tests/load/release-manifest.test.mjs
       - name: Verify release evidence integrity tests
         run: node --test tests/load/release-evidence.test.mjs
+      - name: Validate isolated restore rehearsal safeguards
+        run: node --test tests/load/restore-rehearsal.test.mjs
       - run: pnpm typecheck
       - run: pnpm db:migrate
       - run: pnpm db:migrate
