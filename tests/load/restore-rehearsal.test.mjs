@@ -14,3 +14,10 @@ test("restore refuses empty table and archive counts", () => {
     assert.match(content, new RegExp('\\[\\[ "\\$' + name + '" =~ \\^\\[1-9\\]\\[0-9\\]\\*\\$ \\]\\]'));
   }
 });
+
+test("failure cleanup removes temporary volumes but success retains them", () => {
+  assert.match(content, /trap cleanup EXIT/);
+  assert.match(content, /if \[\[ "\$RESTORE_SUCCEEDED" -ne 1 \]\]/);
+  assert.match(content, /docker volume rm -f "\$INDEX_VOLUME" "\$MINIO_VOLUME"/);
+  assert.match(content, /RESTORE_SUCCEEDED=1\s+echo "\[restore-test\] rehearsal succeeded"/);
+});
