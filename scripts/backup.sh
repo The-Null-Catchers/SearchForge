@@ -87,6 +87,18 @@ EOF
   sha256sum postgres.dump index-data.tar.gz minio-data.tar.gz manifest.txt > checksums.sha256
 )
 
+for file in postgres.dump index-data.tar.gz minio-data.tar.gz manifest.txt; do
+  if [[ ! -s "$OUT_DIR/$file" ]]; then
+    echo "[backup] missing or empty backup artifact: $file" >&2
+    exit 1
+  fi
+done
+
+(
+  cd "$OUT_DIR"
+  sha256sum -c checksums.sha256 >/dev/null
+)
+
 chmod 600 "$OUT_DIR"/*
 echo "[backup] complete: $OUT_DIR"
 echo "[backup] verify with: (cd '$OUT_DIR' && sha256sum -c checksums.sha256)"
