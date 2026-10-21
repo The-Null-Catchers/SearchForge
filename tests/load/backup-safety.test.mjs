@@ -20,7 +20,8 @@ test("existing backup files are rejected before writers are stopped", () => {
 test("backup completion requires nonempty artifacts and verified checksums", () => {
   assert.match(source, /\[\[ ! -s "\$OUT_DIR\/\$file" \]\]/);
   assert.match(source, /sha256sum -c checksums\.sha256/);
-  assert.ok(source.indexOf("sha256sum -c checksums.sha256") < source.indexOf('echo "[backup] complete:'));
+  assert.match(source, /sha256sum -c checksums\\.sha256/);
+  assert.match(source.slice(source.indexOf("resume() {"), source.indexOf("trap resume EXIT")), /if \\(\\(status == 0\\)\\); then[\\s\\S]*\\[backup\\] complete:/);
 });
 
 test("backup and release scripts set private umask before creating artifacts", () => {
