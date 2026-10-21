@@ -32,3 +32,12 @@ test("backup and release scripts set private umask before creating artifacts", (
     assert.ok(body.indexOf("umask 077") < body.indexOf('mkdir -p "$OUT_DIR"'));
   }
 });
+
+test("exit handler reports service restart errors instead of masking them", () => {
+  assert.match(source, /local status=\$\?/);
+  assert.match(source, /trap - EXIT/);
+  assert.match(source, /if ! docker compose start "\$\{WAS_RUNNING\[@\]\}"/);
+  assert.match(source, /could not restart previously running writer services/);
+  assert.match(source, /exit "\$status"/);
+  assert.equal(source.includes('docker compose start "${WAS_RUNNING[@]}" >/dev/null || true'), false);
+});
