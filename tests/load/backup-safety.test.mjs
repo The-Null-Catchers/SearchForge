@@ -41,3 +41,10 @@ test("exit handler reports service restart errors instead of masking them", () =
   assert.match(source, /exit "\$status"/);
   assert.equal(source.includes('docker compose start "${WAS_RUNNING[@]}" >/dev/null || true'), false);
 });
+
+test("backup success message only appears in successful exit handler", () => {
+  const handler = source.slice(source.indexOf("resume() {"), source.indexOf("trap resume EXIT"));
+  assert.match(handler, /if \(\(status == 0\)\); then[\s\S]*\[backup\] complete:/);
+  assert.equal(source.split("[backup] complete:").length - 1, 1);
+  assert.ok(source.indexOf("[backup] complete:") < source.indexOf("trap resume EXIT"));
+});
