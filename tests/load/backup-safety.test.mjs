@@ -22,3 +22,13 @@ test("backup completion requires nonempty artifacts and verified checksums", () 
   assert.match(source, /sha256sum -c checksums\.sha256/);
   assert.ok(source.indexOf("sha256sum -c checksums.sha256") < source.indexOf('echo "[backup] complete:'));
 });
+
+test("backup and release scripts set private umask before creating artifacts", () => {
+  const releaseScript = fileURLToPath(new URL("../../scripts/release-evidence.sh", import.meta.url));
+  for (const path of [script, releaseScript]) {
+    const body = readFileSync(path, "utf8");
+    assert.equal(spawnSync("bash", ["-n", path]).status, 0);
+    assert.match(body, /^umask 077$/m);
+    assert.ok(body.indexOf("umask 077") < body.indexOf('mkdir -p "$OUT_DIR"'));
+  }
+});
