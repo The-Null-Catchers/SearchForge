@@ -59,3 +59,10 @@ test("backup success requires each previously running writer to be running again
   assert.match(handler, /writer service not running after restart/);
   assert.ok(handler.indexOf("docker compose ps --services --status running") < handler.indexOf('echo "[backup] complete:'));
 });
+
+test("backup validates archive readability before final checksum signoff", () => {
+  assert.match(source, /pg_restore --list/);
+  assert.match(source, /tar -tzf \/backup\/index-data\.tar\.gz/);
+  assert.match(source, /tar -tzf \/backup\/minio-data\.tar\.gz/);
+  assert.ok(source.indexOf("pg_restore --list") < source.indexOf("sha256sum -c checksums.sha256"));
+});
