@@ -20,7 +20,9 @@ test("existing backup files are rejected before writers are stopped", () => {
 test("backup completion requires nonempty artifacts and verified checksums", () => {
   assert.match(source, /\[\[ ! -s "\$OUT_DIR\/\$file" \]\]/);
   assert.match(source, /sha256sum -c checksums\.sha256/);
-  assert.ok(source.indexOf("sha256sum -c checksums.sha256") < source.indexOf('echo "[backup] complete:'));
+  const handler = source.slice(source.indexOf("resume() {"), source.indexOf("trap resume EXIT"));
+  assert.ok(handler.includes('echo "[backup] complete:'));
+  assert.ok(handler.includes("if ((status == 0)); then"));
 });
 
 test("backup and release scripts set private umask before creating artifacts", () => {
@@ -40,4 +42,11 @@ test("exit handler reports service restart errors instead of masking them", () =
   assert.match(source, /could not restart previously running writer services/);
   assert.match(source, /exit "\$status"/);
   assert.equal(source.includes('docker compose start "${WAS_RUNNING[@]}" >/dev/null || true'), false);
+});
+
+test("backup success message only appears in successful exit handler", () => {
+  const handler = source.slice(source.indexOf("resume() {"), source.indexOf("trap resume EXIT"));
+  assert.match(handler, /if \(\(status == 0\)\); then[\s\S]*\[backup\] complete:/);
+  assert.equal(source.split("[backup] complete:").length - 1, 1);
+  assert.ok(source.indexOf("[backup] complete:") < source.indexOf("trap resume EXIT"));
 });

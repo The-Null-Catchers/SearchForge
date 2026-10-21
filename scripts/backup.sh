@@ -44,6 +44,10 @@ resume() {
       if ((status == 0)); then status=1; fi
     fi
   fi
+  if ((status == 0)); then
+    echo "[backup] complete: $OUT_DIR"
+      echo "[backup] verify with: (cd '$OUT_DIR' && sha256sum -c checksums.sha256)"
+  fi
   exit "$status"
 }
 trap resume EXIT
@@ -109,5 +113,3 @@ done
 )
 
 chmod 600 "$OUT_DIR"/*
-echo "[backup] complete: $OUT_DIR"
-echo "[backup] verify with: (cd '$OUT_DIR' && sha256sum -c checksums.sha256)"
