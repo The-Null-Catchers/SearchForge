@@ -50,3 +50,12 @@ test("backup success message only appears in successful exit handler", () => {
   assert.equal(source.split("[backup] complete:").length - 1, 1);
   assert.ok(source.indexOf("[backup] complete:") < source.indexOf("trap resume EXIT"));
 });
+
+test("backup success requires each previously running writer to be running again", () => {
+  const handler = source.slice(source.indexOf("resume() {"), source.indexOf("trap resume EXIT"));
+  assert.match(handler, /docker compose ps --services --status running/);
+  assert.match(handler, /for service in "\$\{WAS_RUNNING\[@\]\}"/);
+  assert.match(handler, /grep -Fxq -- "\$service"/);
+  assert.match(handler, /writer service not running after restart/);
+  assert.ok(handler.indexOf("docker compose ps --services --status running") < handler.indexOf('echo "[backup] complete:'));
+});

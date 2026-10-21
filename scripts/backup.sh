@@ -44,6 +44,21 @@ resume() {
       if ((status == 0)); then status=1; fi
     fi
   fi
+  if ((${#WAS_RUNNING[@]} > 0)); then
+    local running
+    if ! running="$(docker compose ps --services --status running)"; then
+      echo "[backup] ERROR: cannot confirm resumed writer status" >&2
+      if ((status == 0)); then status=1; fi
+    else
+      local service
+      for service in "${WAS_RUNNING[@]}"; do
+        if ! grep -Fxq -- "$service" <<< "$running"; then
+          echo "[backup] ERROR: writer service not running after restart: $service" >&2
+          if ((status == 0)); then status=1; fi
+        fi
+      done
+    fi
+  fi
   if ((status == 0)); then
     echo "[backup] complete: $OUT_DIR"
       echo "[backup] verify with: (cd '$OUT_DIR' && sha256sum -c checksums.sha256)"
