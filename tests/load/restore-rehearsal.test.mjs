@@ -29,6 +29,9 @@ test("resource collision checks precede cleanup trap", () => {
   assert.ok(content.indexOf('docker volume inspect "$MINIO_VOLUME"') < content.indexOf("trap cleanup EXIT"));
 });
 
-test("restore resource suffix contains Bash process ID", () => {
-  assert.ok(content.includes('STAMP="$(date -u +%Y%m%dT%H%M%SZ)-$"'));
+
+
+test("restore names include the actual Bash PID", () => {
+  assert.ok(content.includes('STAMP="$(date -u +%Y%m%dT%H%M%SZ)-${BASHPID}"'));
+  assert.equal(content.includes('STAMP="$(date -u +%Y%m%dT%H%M%SZ)-$"'), false);
 });

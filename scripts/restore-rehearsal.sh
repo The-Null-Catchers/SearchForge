@@ -20,7 +20,7 @@ grep -qx 'searchforge_backup_version=1' "$BACKUP_DIR/manifest.txt" || {
   exit 1
 }
 
-STAMP="$(date -u +%Y%m%dT%H%M%SZ)-$"
+STAMP="$(date -u +%Y%m%dT%H%M%SZ)-${BASHPID}"
 PG_CONTAINER="searchforge-restore-pg-$STAMP"
 INDEX_VOLUME="searchforge_restore_index_$STAMP"
 MINIO_VOLUME="searchforge_restore_minio_$STAMP"
