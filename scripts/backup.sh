@@ -36,9 +36,15 @@ for service in "${WRITERS[@]}"; do
 done
 
 resume() {
+  local status=$?
+  trap - EXIT
   if ((${#WAS_RUNNING[@]})); then
-    docker compose start "${WAS_RUNNING[@]}" >/dev/null || true
+    if ! docker compose start "${WAS_RUNNING[@]}" >/dev/null; then
+      echo "[backup] ERROR: could not restart previously running writer services" >&2
+      if ((status == 0)); then status=1; fi
+    fi
   fi
+  exit "$status"
 }
 trap resume EXIT
 
