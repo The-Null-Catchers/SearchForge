@@ -59,3 +59,10 @@ test("backup success requires each previously running writer to be running again
   assert.match(handler, /writer service not running after restart/);
   assert.ok(handler.indexOf("docker compose ps --services --status running") < handler.indexOf('echo "[backup] complete:'));
 });
+
+test("missing backup volumes are rejected before writers are stopped", () => {
+  const volumeCheck = source.indexOf('docker volume inspect "${PROJECT}_${volume}"');
+  assert.ok(volumeCheck !== -1);
+  assert.ok(volumeCheck < source.indexOf("docker compose stop"));
+  assert.ok(volumeCheck < source.indexOf("trap resume EXIT"));
+});
