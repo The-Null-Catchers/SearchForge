@@ -64,5 +64,5 @@ test("backup validates archive readability before final checksum signoff", () =>
   assert.match(source, /pg_restore --list/);
   assert.match(source, /tar -tzf \/backup\/index-data\.tar\.gz/);
   assert.match(source, /tar -tzf \/backup\/minio-data\.tar\.gz/);
-  assert.ok(source.indexOf("pg_restore --list") < source.indexOf("sha256sum -c checksums.sha256"));
+  assert.ok(source.indexOf("pg_restore --list") < source.lastIndexOf("sha256sum -c checksums.sha256"));
 });
