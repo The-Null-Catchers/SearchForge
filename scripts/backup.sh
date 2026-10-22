@@ -122,6 +122,12 @@ for file in postgres.dump index-data.tar.gz minio-data.tar.gz manifest.txt; do
   fi
 done
 
+# Check archive structure, not only the checksum calculated from its bytes.
+echo "[backup] verifying PostgreSQL dump and compressed archive readability"
+docker compose exec -T postgres pg_restore --list < "$OUT_DIR/postgres.dump" >/dev/null
+docker run --rm -v "$OUT_DIR:/backup:ro" alpine:3.22 \
+  sh -ec 'tar -tzf /backup/index-data.tar.gz >/dev/null && tar -tzf /backup/minio-data.tar.gz >/dev/null'
+
 (
   cd "$OUT_DIR"
   sha256sum -c checksums.sha256 >/dev/null
