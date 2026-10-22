@@ -66,3 +66,10 @@ test("backup validates archive readability before final checksum signoff", () =>
   assert.match(source, /tar -tzf \/backup\/minio-data\.tar\.gz/);
   assert.ok(source.indexOf("pg_restore --list") < source.lastIndexOf("sha256sum -c checksums.sha256"));
 });
+
+test("backup preflights required volumes before stopping writers", () => {
+  const check = source.indexOf('docker volume inspect "${PROJECT}_${volume}"');
+  assert.ok(check !== -1);
+  assert.ok(check < source.indexOf("trap resume EXIT"));
+  assert.ok(check < source.indexOf("docker compose stop"));
+});
