@@ -7,6 +7,15 @@ umask 077
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
+# Hold an exclusive lock through the EXIT handler, including writer restart.
+command -v flock >/dev/null || { echo "flock is required" >&2; exit 1; }
+mkdir -p "$ROOT_DIR/backups"
+exec {BACKUP_LOCK_FD}> "$ROOT_DIR/backups/.backup.lock"
+if ! flock -n "$BACKUP_LOCK_FD"; then
+  echo "[backup] another backup is already running" >&2
+  exit 2
+fi
+
 PROJECT="${COMPOSE_PROJECT_NAME:-searchforge}"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 OUT_DIR="${1:-$ROOT_DIR/backups/$STAMP}"
