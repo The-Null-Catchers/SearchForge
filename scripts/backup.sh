@@ -26,6 +26,13 @@ command -v docker >/dev/null || { echo "docker is required" >&2; exit 1; }
 docker compose version >/dev/null
 command -v sha256sum >/dev/null || { echo "sha256sum is required" >&2; exit 1; }
 
+for volume in index_data minio_data; do
+  if ! docker volume inspect "${PROJECT}_${volume}" >/dev/null 2>&1; then
+    echo "missing Docker volume: ${PROJECT}_${volume}" >&2
+    exit 1
+  fi
+done
+
 declare -a WRITERS=(api crawler indexer worker)
 declare -a WAS_RUNNING=()
 
@@ -72,13 +79,6 @@ docker compose stop "${WRITERS[@]}" >/dev/null
 
 echo "[backup] ensuring stateful services are running"
 docker compose up -d postgres redis minio >/dev/null
-
-for volume in index_data minio_data; do
-  if ! docker volume inspect "${PROJECT}_${volume}" >/dev/null 2>&1; then
-    echo "missing Docker volume: ${PROJECT}_${volume}" >&2
-    exit 1
-  fi
-done
 
 echo "[backup] dumping PostgreSQL"
 docker compose exec -T postgres pg_dump \
