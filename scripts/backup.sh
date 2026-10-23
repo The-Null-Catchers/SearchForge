@@ -19,6 +19,11 @@ fi
 PROJECT="${COMPOSE_PROJECT_NAME:-searchforge}"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 OUT_DIR="${1:-$ROOT_DIR/backups/$STAMP}"
+# Never follow a symlink supplied as the backup destination.
+if [[ -L "$OUT_DIR" ]]; then
+  echo "[backup] refusing symlink backup destination: $OUT_DIR" >&2
+  exit 2
+fi
 mkdir -p "$OUT_DIR"
 OUT_DIR="$(cd "$OUT_DIR" && pwd)"
 chmod 700 "$OUT_DIR"
