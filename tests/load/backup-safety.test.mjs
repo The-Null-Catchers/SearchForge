@@ -80,3 +80,9 @@ test("backup obtains exclusive lock before any writer interruption", () => {
   assert.ok(source.indexOf('flock -n "$BACKUP_LOCK_FD"') < source.indexOf("docker compose stop"));
   assert.ok(source.indexOf('flock -n "$BACKUP_LOCK_FD"') < source.indexOf("trap resume EXIT"));
 });
+
+test("backup refuses symlink output directory before filesystem writes", () => {
+  assert.match(source, /if \[\[ -L "\$OUT_DIR" \]\]; then/);
+  assert.match(source, /refusing symlink backup destination/);
+  assert.ok(source.indexOf('if [[ -L "$OUT_DIR" ]]') < source.indexOf('mkdir -p "$OUT_DIR"'));
+});
