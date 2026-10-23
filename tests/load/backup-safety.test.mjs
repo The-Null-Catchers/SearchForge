@@ -73,3 +73,10 @@ test("backup preflights required volumes before stopping writers", () => {
   assert.ok(check < source.indexOf("trap resume EXIT"));
   assert.ok(check < source.indexOf("docker compose stop"));
 });
+
+test("backup obtains exclusive lock before any writer interruption", () => {
+  assert.match(source, /flock -n "\$BACKUP_LOCK_FD"/);
+  assert.match(source, /another backup is already running/);
+  assert.ok(source.indexOf('flock -n "$BACKUP_LOCK_FD"') < source.indexOf("docker compose stop"));
+  assert.ok(source.indexOf('flock -n "$BACKUP_LOCK_FD"') < source.indexOf("trap resume EXIT"));
+});
