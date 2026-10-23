@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
@@ -85,4 +87,22 @@ test("backup refuses symlink output directory before filesystem writes", () => {
   assert.match(source, /if \[\[ -L "\$OUT_DIR" \]\]; then/);
   assert.match(source, /refusing symlink backup destination/);
   assert.ok(source.indexOf('if [[ -L "$OUT_DIR" ]]') < source.indexOf('mkdir -p "$OUT_DIR"'));
+});
+
+test("symlink destination is rejected without modifying its target", () => {
+  const root = mkdtempSync(join(tmpdir(), "searchforge-backup-"));
+  const target = join(root, "real");
+  const link = join(root, "linked");
+  try {
+    mkdirSync(target);
+    writeFileSync(join(target, "sentinel.txt"), "preserve");
+    symlinkSync(target, link, "dir");
+    const result = spawnSync("bash", [script, link], { encoding: "utf8", timeout: 10000 });
+    assert.equal(result.status, 2, result.stderr);
+    assert.match(result.stderr, /refusing symlink backup destination/);
+    assert.deepEqual(readdirSync(target), ["sentinel.txt"]);
+    assert.equal(readFileSync(join(target, "sentinel.txt"), "utf8"), "preserve");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
