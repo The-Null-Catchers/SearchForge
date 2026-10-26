@@ -37,9 +37,16 @@ test("restore names include the actual Bash PID", () => {
 });
 
 test("archive member paths are checked before restoring resources", () => {
-  assert.match(content, /tar -tzf/);
-  assert.match(content, /awk -F\//);
+  assert.match(content, /tarfile\.open/);
+  assert.match(content, /pathlib\.PurePosixPath/);
   assert.match(content, /rejected unsafe or unreadable archive/);
   assert.ok(content.indexOf("for archive in index-data.tar.gz") < content.indexOf("docker volume create"));
   assert.ok(content.indexOf("for archive in index-data.tar.gz") < content.indexOf("docker run -d --name"));
+});
+
+test("restore rejects symlink hardlink and special archive entries", () => {
+  assert.match(content, /not \(member\.isfile\(\) or member\.isdir\(\)\)/);
+  assert.match(content, /name\.is_absolute\(\)/);
+  assert.match(content, /"\.\." in name\.parts/);
+  assert.ok(content.indexOf("python:3.12-alpine") < content.indexOf("docker volume create"));
 });
