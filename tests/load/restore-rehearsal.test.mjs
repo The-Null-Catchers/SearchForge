@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
@@ -49,4 +52,39 @@ test("restore rejects symlink hardlink and special archive entries", () => {
   assert.match(content, /name\.is_absolute\(\)/);
   assert.match(content, /"\.\." in name\.parts/);
   assert.ok(content.indexOf("python:3.12-alpine") < content.indexOf("docker volume create"));
+});
+
+test("tar archive validator accepts normal files and rejects links and traversal", () => {
+  const pythonCheck = content.match(/python -c '\n([\s\S]*?)\n' "\$archive"/);
+  assert.ok(pythonCheck, "Python archive validator should remain discoverable");
+  const root = mkdtempSync(join(tmpdir(), "searchforge-tar-"));
+  try {
+    const py = [
+      "import io, pathlib, tarfile, sys",
+      "root = pathlib.Path(sys.argv[1])",
+      "for name, member_name, kind, accepted in [",
+      " ('valid','data/file.txt','file',True),",
+      " ('traversal','../escape','file',False),",
+      " ('absolute','/tmp/escape','file',False),",
+      " ('symlink','data/link','symlink',False),",
+      " ('hardlink','data/hard','hardlink',False),",
+      "]:",
+      " path = root / (name + '.tar.gz')",
+      " with tarfile.open(path, 'w:gz') as tf:",
+      "  info = tarfile.TarInfo(member_name)",
+      "  info.type = {'file':tarfile.REGTYPE, 'symlink':tarfile.SYMTYPE, 'hardlink':tarfile.LNKTYPE}[kind]",
+      "  info.linkname = 'data/file.txt' if kind != 'file' else ''",
+      "  info.size = 1 if kind == 'file' else 0",
+      "  tf.addfile(info, io.BytesIO(b'x') if kind == 'file' else None)",
+    ].join("\n");
+    const created = spawnSync("python3", ["-c", py, root], { encoding: "utf8" });
+    assert.equal(created.status, 0, created.stderr);
+    for (const [name, accepted] of [["valid",true],["traversal",false],["absolute",false],["symlink",false],["hardlink",false]]) {
+      const scriptBody = pythonCheck[1].replace('"/backup/" + sys.argv[1]', 'sys.argv[1]');
+      const result = spawnSync("python3", ["-c", scriptBody, join(root, name + ".tar.gz")], { encoding: "utf8" });
+      assert.equal(result.status === 0, accepted, name + ": " + result.stderr);
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
