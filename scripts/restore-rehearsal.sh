@@ -20,6 +20,15 @@ grep -qx 'searchforge_backup_version=1' "$BACKUP_DIR/manifest.txt" || {
   exit 1
 }
 
+# Validate archive member paths before creating restore resources.
+for archive in index-data.tar.gz minio-data.tar.gz; do
+  if ! docker run --rm -v "$BACKUP_DIR:/backup:ro" alpine:3.22 \
+    sh -ec 'tar -tzf "/backup/$1" > /tmp/members; awk -F/ '\''{ if ($1 == "") bad=1; for (i=1; i<=NF; i++) if ($i == "..") bad=1 } END { exit bad }'\'' /tmp/members' sh "$archive"; then
+    echo "[restore-test] rejected unsafe or unreadable archive: $archive" >&2
+    exit 1
+  fi
+done
+
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)-${BASHPID}"
 PG_CONTAINER="searchforge-restore-pg-$STAMP"
 INDEX_VOLUME="searchforge_restore_index_$STAMP"

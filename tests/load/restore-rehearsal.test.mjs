@@ -35,3 +35,11 @@ test("restore names include the actual Bash PID", () => {
   assert.ok(content.includes('STAMP="$(date -u +%Y%m%dT%H%M%SZ)-${BASHPID}"'));
   assert.equal(content.includes('STAMP="$(date -u +%Y%m%dT%H%M%SZ)-$"'), false);
 });
+
+test("archive member paths are checked before restoring resources", () => {
+  assert.match(content, /tar -tzf/);
+  assert.match(content, /awk -F\//);
+  assert.match(content, /rejected unsafe or unreadable archive/);
+  assert.ok(content.indexOf("for archive in index-data.tar.gz") < content.indexOf("docker volume create"));
+  assert.ok(content.indexOf("for archive in index-data.tar.gz") < content.indexOf("docker run -d --name"));
+});
