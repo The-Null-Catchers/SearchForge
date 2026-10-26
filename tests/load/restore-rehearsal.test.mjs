@@ -38,7 +38,7 @@ test("restore names include the actual Bash PID", () => {
 
 test("archive member paths are checked before restoring resources", () => {
   assert.match(content, /tarfile\.open/);
-  assert.match(content, /awk -F\//);
+  assert.match(content, /pathlib\.PurePosixPath/);
   assert.match(content, /rejected unsafe or unreadable archive/);
   assert.ok(content.indexOf("for archive in index-data.tar.gz") < content.indexOf("docker volume create"));
   assert.ok(content.indexOf("for archive in index-data.tar.gz") < content.indexOf("docker run -d --name"));
