@@ -20,10 +20,17 @@ grep -qx 'searchforge_backup_version=1' "$BACKUP_DIR/manifest.txt" || {
   exit 1
 }
 
-# Validate archive member paths before creating restore resources.
+# Reject traversal, links and special files before creating restore resources.
 for archive in index-data.tar.gz minio-data.tar.gz; do
-  if ! docker run --rm -v "$BACKUP_DIR:/backup:ro" alpine:3.22 \
-    sh -ec 'tar -tzf "/backup/$1" > /tmp/members; awk -F/ '\''{ if ($1 == "") bad=1; for (i=1; i<=NF; i++) if ($i == "..") bad=1 } END { exit bad }'\'' /tmp/members' sh "$archive"; then
+  if ! docker run --rm -v "$BACKUP_DIR:/backup:ro" python:3.12-alpine \
+    python -c '
+import pathlib, sys, tarfile
+with tarfile.open("/backup/" + sys.argv[1], "r:gz") as archive:
+    for member in archive:
+        name = pathlib.PurePosixPath(member.name)
+        if name.is_absolute() or ".." in name.parts or not (member.isfile() or member.isdir()):
+            raise SystemExit("unsafe archive member: " + member.name)
+' "$archive"; then
     echo "[restore-test] rejected unsafe or unreadable archive: $archive" >&2
     exit 1
   fi
