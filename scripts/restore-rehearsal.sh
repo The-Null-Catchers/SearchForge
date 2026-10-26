@@ -20,11 +20,10 @@ grep -qx 'searchforge_backup_version=1' "$BACKUP_DIR/manifest.txt" || {
   exit 1
 }
 
-# Inspect archive member paths before any restore containers or volumes are created.
-# The backups are produced by tar from volume roots; absolute paths and ".." are invalid.
+# Validate archive member paths before creating restore resources.
 for archive in index-data.tar.gz minio-data.tar.gz; do
   if ! docker run --rm -v "$BACKUP_DIR:/backup:ro" alpine:3.22 \
-    sh -ec 'tar -tzf "/backup/$1" | awk '\''$0 ~ /^\\// || $0 ~ /(^|\\/)\\.\\.(\\/|$)/ { bad=1; print "unsafe archive member: " $0 > "/dev/stderr" } END { exit bad }'\'' ' sh "$archive"; then
+    sh -ec 'tar -tzf "/backup/$1" > /tmp/members; awk -F/ '\''{ if ($1 == "") bad=1; for (i=1; i<=NF; i++) if ($i == "..") bad=1 } END { exit bad }'\'' /tmp/members' sh "$archive"; then
     echo "[restore-test] rejected unsafe or unreadable archive: $archive" >&2
     exit 1
   fi
