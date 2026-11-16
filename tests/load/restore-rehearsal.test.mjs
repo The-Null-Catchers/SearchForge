@@ -68,18 +68,20 @@ test("tar archive validator accepts normal files and rejects links and traversal
       " ('absolute','/tmp/escape','file',False),",
       " ('symlink','data/link','symlink',False),",
       " ('hardlink','data/hard','hardlink',False),",
+      " ('fifo','data/pipe','fifo',False),",
+      " ('character','data/device','character',False),",
       "]:",
       " path = root / (name + '.tar.gz')",
       " with tarfile.open(path, 'w:gz') as tf:",
       "  info = tarfile.TarInfo(member_name)",
-      "  info.type = {'file':tarfile.REGTYPE, 'symlink':tarfile.SYMTYPE, 'hardlink':tarfile.LNKTYPE}[kind]",
+      "  info.type = {'file':tarfile.REGTYPE, 'symlink':tarfile.SYMTYPE, 'hardlink':tarfile.LNKTYPE, 'fifo':tarfile.FIFOTYPE, 'character':tarfile.CHRTYPE}[kind]",
       "  info.linkname = 'data/file.txt' if kind != 'file' else ''",
       "  info.size = 1 if kind == 'file' else 0",
       "  tf.addfile(info, io.BytesIO(b'x') if kind == 'file' else None)",
     ].join("\n");
     const created = spawnSync("python3", ["-c", py, root], { encoding: "utf8" });
     assert.equal(created.status, 0, created.stderr);
-    for (const [name, accepted] of [["valid",true],["traversal",false],["absolute",false],["symlink",false],["hardlink",false]]) {
+    for (const [name, accepted] of [["valid",true],["traversal",false],["absolute",false],["symlink",false],["hardlink",false],["fifo",false],["character",false]]) {
       const scriptBody = pythonCheck[1].replace('"/backup/" + sys.argv[1]', 'sys.argv[1]');
       const result = spawnSync("python3", ["-c", scriptBody, join(root, name + ".tar.gz")], { encoding: "utf8" });
       assert.equal(result.status === 0, accepted, name + ": " + result.stderr);
