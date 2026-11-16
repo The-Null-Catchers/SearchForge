@@ -1,0 +1,140 @@
+{
+  "repository": "The-Null-Catchers/SearchForge",
+  "defaultBranch": "main",
+  "baseSHA": "25680d6a487cdb0fd7555e00db2284defb7dda9c",
+  "backupTag": "cleanup-backup-2026-11-16",
+  "delete": [
+    {
+      "name": "feat/logs-workflow",
+      "sha": "56e7b58e63f3d9ae744d07ac254e13695705c1c0",
+      "reason": "ancestor"
+    },
+    {
+      "name": "feat/logs-workflow-v10",
+      "sha": "56e7b58e63f3d9ae744d07ac254e13695705c1c0",
+      "reason": "ancestor"
+    },
+    {
+      "name": "feat/logs-workflow-v11",
+      "sha": "83c21ac60aa0b1bb790688c49670a68d6c488114",
+      "reason": "ancestor"
+    },
+    {
+      "name": "feat/logs-workflow-v2",
+      "sha": "56e7b58e63f3d9ae744d07ac254e13695705c1c0",
+      "reason": "ancestor"
+    },
+    {
+      "name": "feat/logs-workflow-v3",
+      "sha": "56e7b58e63f3d9ae744d07ac254e13695705c1c0",
+      "reason": "ancestor"
+    },
+    {
+      "name": "feat/logs-workflow-v4",
+      "sha": "56e7b58e63f3d9ae744d07ac254e13695705c1c0",
+      "reason": "ancestor"
+    },
+    {
+      "name": "feat/logs-workflow-v5",
+      "sha": "56e7b58e63f3d9ae744d07ac254e13695705c1c0",
+      "reason": "ancestor"
+    },
+    {
+      "name": "feat/logs-workflow-v6",
+      "sha": "56e7b58e63f3d9ae744d07ac254e13695705c1c0",
+      "reason": "ancestor"
+    },
+    {
+      "name": "feat/logs-workflow-v7",
+      "sha": "56e7b58e63f3d9ae744d07ac254e13695705c1c0",
+      "reason": "ancestor"
+    },
+    {
+      "name": "feat/logs-workflow-v8",
+      "sha": "56e7b58e63f3d9ae744d07ac254e13695705c1c0",
+      "reason": "ancestor"
+    },
+    {
+      "name": "feat/logs-workflow-v9",
+      "sha": "56e7b58e63f3d9ae744d07ac254e13695705c1c0",
+      "reason": "ancestor"
+    },
+    {
+      "name": "feat/production-foundation",
+      "sha": "12b968375fca4a8d0771336b356bb0dd7f2b5e7c",
+      "reason": "ancestor"
+    },
+    {
+      "name": "feat/quota-worker-enforcement",
+      "sha": "5bbd42bffe344d39e5cccc6e237441501e42c451",
+      "reason": "ancestor"
+    },
+    {
+      "name": "feat/settings-workflow",
+      "sha": "6500d5f3ddf385eb25601a1fa6e520e2d6c8aeba",
+      "reason": "ancestor"
+    },
+    {
+      "name": "feat/crawl-page-retries",
+      "sha": "74cdc869849643917d0f092741ed4b38fe8f8148",
+      "reason": "equivalent"
+    },
+    {
+      "name": "feat/operational-email-alerts",
+      "sha": "ede7f8860b91a997ecf06b73c2194d6f417d6100",
+      "reason": "equivalent"
+    },
+    {
+      "name": "feat/queued-job-recovery",
+      "sha": "f9d5a74f18c34ebd854a3c57d327377e1577c7ca",
+      "reason": "equivalent"
+    },
+    {
+      "name": "feat/release-evidence",
+      "sha": "6c47813115be38bf5c1482ce81020835ed646e64",
+      "reason": "equivalent"
+    },
+    {
+      "name": "feat/safe-source-deletion",
+      "sha": "001c7d4be6ae6af9b50e9116e9a4c10ed4dc20f1",
+      "reason": "equivalent"
+    },
+    {
+      "name": "fix/search-analytics-consistency",
+      "sha": "4078e61ee489d4c8f89dfd2eecc327976329a886",
+      "reason": "equivalent"
+    },
+    {
+      "name": "test/backup-symlink-behavior",
+      "sha": "3396072203be1aa77e38f62245bac0c0ed03c613",
+      "reason": "equivalent"
+    },
+    {
+      "name": "test/restore-special-tar-members",
+      "sha": "1a2f339f8a4bda5855f611bccbcb1d9f46989864",
+      "reason": "equivalent"
+    },
+    {
+      "name": "test/restore-tar-member-behavior",
+      "sha": "2d406d0d4ab020f2c68201ff71ad07feb2e770dd",
+      "reason": "equivalent"
+    }
+  ],
+  "status": "Explicitly approved: archive before lease-guarded deletion",
+  "archiveParents": [
+    "56e7b58e63f3d9ae744d07ac254e13695705c1c0",
+    "83c21ac60aa0b1bb790688c49670a68d6c488114",
+    "12b968375fca4a8d0771336b356bb0dd7f2b5e7c",
+    "5bbd42bffe344d39e5cccc6e237441501e42c451",
+    "6500d5f3ddf385eb25601a1fa6e520e2d6c8aeba",
+    "74cdc869849643917d0f092741ed4b38fe8f8148",
+    "ede7f8860b91a997ecf06b73c2194d6f417d6100",
+    "f9d5a74f18c34ebd854a3c57d327377e1577c7ca",
+    "6c47813115be38bf5c1482ce81020835ed646e64",
+    "001c7d4be6ae6af9b50e9116e9a4c10ed4dc20f1",
+    "4078e61ee489d4c8f89dfd2eecc327976329a886",
+    "3396072203be1aa77e38f62245bac0c0ed03c613",
+    "1a2f339f8a4bda5855f611bccbcb1d9f46989864",
+    "2d406d0d4ab020f2c68201ff71ad07feb2e770dd"
+  ]
+}
