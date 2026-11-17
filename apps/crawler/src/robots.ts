@@ -7,11 +7,24 @@ function stripComment(line: string): string {
 }
 
 function matchesPath(pathname: string, rule: string): boolean {
-  if (!rule) return true;
-  const escaped = rule
-    .replace(/[.*+?^$()|[\]\\]/g, "\\$&")
-    .replace(/\*/g, ".*");
-  return new RegExp(`^${escaped}`).test(pathname);
+  if (!rule) return false;
+  const anchored = rule.endsWith("$");
+  const parts = (anchored ? rule.slice(0, -1) : rule).split("*");
+  let cursor = 0;
+  for (let index = 0; index < parts.length; index += 1) {
+    const part = parts[index]!;
+    if (index === 0) {
+      if (!pathname.startsWith(part)) return false;
+      cursor = part.length;
+    } else if (anchored && index === parts.length - 1) {
+      return pathname.length - part.length >= cursor && pathname.endsWith(part);
+    } else {
+      const found = pathname.indexOf(part, cursor);
+      if (found < 0) return false;
+      cursor = found + part.length;
+    }
+  }
+  return !anchored || cursor === pathname.length;
 }
 
 export class RobotsPolicy {
