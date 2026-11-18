@@ -105,14 +105,12 @@ docker compose exec -T postgres pg_dump \
 echo "[backup] archiving immutable index storage"
 docker run --rm \
   -v "${PROJECT}_index_data:/data:ro" \
-  -v "$OUT_DIR:/backup" \
-  alpine:3.22 sh -ec 'cd /data && tar -czf /backup/index-data.tar.gz .'
+  alpine:3.22 tar -czf - -C /data . > "$OUT_DIR/index-data.tar.gz"
 
 echo "[backup] archiving MinIO object storage"
 docker run --rm \
   -v "${PROJECT}_minio_data:/data:ro" \
-  -v "$OUT_DIR:/backup" \
-  alpine:3.22 sh -ec 'cd /data && tar -czf /backup/minio-data.tar.gz .'
+  alpine:3.22 tar -czf - -C /data . > "$OUT_DIR/minio-data.tar.gz"
 
 cat > "$OUT_DIR/manifest.txt" <<EOF
 searchforge_backup_version=1

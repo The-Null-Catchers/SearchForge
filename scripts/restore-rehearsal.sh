@@ -80,6 +80,11 @@ PG_TABLE_COUNT="$(docker exec "$PG_CONTAINER" psql -U searchforge -d searchforge
 echo "$PG_TABLE_COUNT"
 [[ "$PG_TABLE_COUNT" =~ ^[1-9][0-9]*$ ]] || { echo "[restore-test] restored PostgreSQL schema has no public tables" >&2; exit 1; }
 
+PG_DOCUMENT_COUNT="$(docker exec "$PG_CONTAINER" psql -U searchforge -d searchforge -Atc "select count(*) from documents where deleted_at is null;")"
+PG_ACTIVE_VERSION_COUNT="$(docker exec "$PG_CONTAINER" psql -U searchforge -d searchforge -Atc "select count(*) from indexes where active_version_id is not null;")"
+echo "[restore-test] live documents: $PG_DOCUMENT_COUNT"
+echo "[restore-test] active indexes: $PG_ACTIVE_VERSION_COUNT"
+
 echo "[restore-test] restoring index and object archives into isolated volumes"
 docker volume create "$INDEX_VOLUME" >/dev/null
 docker volume create "$MINIO_VOLUME" >/dev/null
