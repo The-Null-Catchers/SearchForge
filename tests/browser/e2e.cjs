@@ -117,10 +117,76 @@ async function verifySearchPlayground(page) {
   assert(typo.debug?.expandedTerms?.javscript?.includes("javascript"), "Typo expansion did not include javascript");
   await page.screenshot({ path: path.join(artifactsDir, "playground-typo.png"), fullPage: true });
 
+  const alias = "ecmascript";
+  const replacementTitle = "JavaScript search engine release candidate";
+  async function searchForAlias() {
+    await page.getByLabel("Query", { exact: true }).fill(alias);
+    await page.getByLabel("Typo tolerance").uncheck();
+    return search();
+  }
+
+  const beforeSynonym = await searchForAlias();
+  assert(beforeSynonym.total === 0, "The demo alias unexpectedly matches before a synonym is added");
+  await page.getByRole("link", { name: "Synonyms", exact: true }).click();
+  await page.getByLabel("Name", { exact: true }).fill("ECMAScript documentation");
+  const terms = page.getByLabel("Terms (comma separated)", { exact: true });
+  await terms.fill(alias);
+  const saveSynonym = page.getByRole("button", { name: "Save synonym set", exact: true });
+  await saveSynonym.click();
+  await page.getByRole("alert").filter({ hasText: "at least two different terms" }).waitFor();
+  await terms.fill(`${alias}, javascript`);
+  await page.getByLabel(/One-way expansion/).check();
+  await saveSynonym.click();
+  await page.getByRole("status").filter({ hasText: "Synonym set saved" }).waitFor();
+
+  async function openPlayground() {
+    await page.getByRole("link", { name: "Search Playground", exact: true }).click();
+    await keyInput.fill(searchKey);
+  }
+  await openPlayground();
+  const expanded = await searchForAlias();
+  assert(expanded.hits[0]?.id === "search-en" && expanded.indexVersion === beforeSynonym.indexVersion, "The new synonym did not expand search on the current index");
+  await results.getByText(/Expanded ecmascript.*javascript/).waitFor();
+  await page.screenshot({ path: path.join(artifactsDir, "playground-synonym.png"), fullPage: true });
+
+  await page.getByRole("link", { name: "Indexes", exact: true }).click();
+  const source = page.getByRole("row").filter({ hasText: "search-en" });
+  await source.getByRole("button", { name: "Inspect", exact: true }).click();
+  const editor = page.getByLabel("Editable document JSON");
+  const original = JSON.parse(await editor.inputValue());
+  await editor.fill(JSON.stringify({ ...original, title: replacementTitle }));
+  await page.getByRole("button", { name: "Save fields", exact: true }).click();
+  const oldVersion = page.getByRole("row").filter({
+    has: page.getByRole("cell", { name: `v${expanded.indexVersion}`, exact: true })
+  });
+  await oldVersion.getByRole("cell", { name: "retired", exact: true }).waitFor({ timeout: 60_000 });
+
+  await openPlayground();
+  const rebuilt = await searchForAlias();
+  assert(Number(rebuilt.indexVersion) > Number(expanded.indexVersion), "An updated immutable version did not become active");
+  assert(rebuilt.hits[0]?.id === "search-en" && rebuilt.hits[0].document.title === replacementTitle, "Search did not return the updated indexed document");
+  await results.getByRole("heading", { name: replacementTitle, exact: true }).waitFor();
+
+  await page.getByRole("link", { name: "Indexes", exact: true }).click();
+  page.once("dialog", dialog => dialog.accept());
+  await oldVersion.getByRole("button", { name: "Activate", exact: true }).click();
+  await oldVersion.getByRole("cell", { name: "active", exact: true }).waitFor();
+  await page.screenshot({ path: path.join(artifactsDir, "index-version-rollback.png"), fullPage: true });
+
+  await openPlayground();
+  const rolledBack = await searchForAlias();
+  assert(rolledBack.indexVersion === expanded.indexVersion, "Search did not resume serving the original version");
+  assert(rolledBack.hits[0]?.id === "search-en" && rolledBack.hits[0].document.title === original.title, "Rollback did not restore the original search result");
+  await results.getByRole("heading", { name: original.title, exact: true }).waitFor();
+  await page.screenshot({ path: path.join(artifactsDir, "playground-rollback.png"), fullPage: true });
+
   await projectSelector.selectOption(labs.id);
   await results.getByText("Run a query to see matching documents.").waitFor();
   assert(await keyInput.inputValue() === "", "The previous project's API key remained in the form");
-  return { indexedDocuments: documents.length, indexVersion: arabic.indexVersion, arabicHits: arabic.hits.map(hit => hit.id), typoTopHit: typo.hits[0].id };
+  return { indexedDocuments: documents.length, indexVersion: arabic.indexVersion, arabicHits: arabic.hits.map(hit => hit.id), typoTopHit: typo.hits[0].id,
+    synonym: { alias, beforeHits: beforeSynonym.total, afterTopHit: expanded.hits[0].id },
+    rollback: { originalVersion: expanded.indexVersion, rebuiltVersion: rebuilt.indexVersion, activeVersion: rolledBack.indexVersion, restoredTitle: rolledBack.hits[0].document.title }
+  };
 }
 
 async function main() {
