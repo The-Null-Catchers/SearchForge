@@ -20,6 +20,11 @@
 
 **الديمو:** بحث عربي مع typo → explain → تعديل synonym → إصدار فهرس جديد → rollback. **الأدلة:** [الحالة](https://github.com/The-Null-Catchers/SearchForge/blob/main/docs/status.md)، [أدلة الإصدار](https://github.com/The-Null-Catchers/SearchForge/blob/main/docs/release-evidence.md).
 
+## تقدم التنفيذ
+
+- [دليل Search Playground](docs/playground-demo.md) يوثّق البحث العربي والفلترة وتصحيح الأخطاء وتفسير الترتيب باستخدام corpus اصطناعي. ينتج اختبار المتصفح لقطات ونتائج مرتبطة بتشغيل CI.
+- يتبقى عرض تغيير المرادفات والرجوع إلى إصدار سابق، وقياس الحمل والاستعادة المعزولة في بيئة الهدف.
+
 ## بوابة قبول نسخة البورتفيليو
 
 - [ ] يستطيع شخص آخر تشغيل المسار الرئيسي من checkout نظيف، باتباع README، دون أسرار شخصية.
