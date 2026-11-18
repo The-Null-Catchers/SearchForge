@@ -18,4 +18,13 @@ Sign in as `owner@searchforge.local` with the development password in [Demo seed
 2. Choose **Arabic search** and run the query. The preset uses `محرك بحث` with `docs` as the category. Open **BM25 score breakdown** on **محرك بحث عربي** to inspect the score components. Clear **Category filter** and run the query again to see matching guides.
 3. Choose **English typo**. Turn off **Typo tolerance** and run `javscript` to see the zero-result state. Turn typo tolerance back on and run it again. **JavaScript search engine** ranks first and the expanded terms include `javascript`.
 
-The **container-smoke** job imports the same corpus into a disposable stack, visits the playground in Chromium, and uploads Arabic and typo screenshots plus the checked document IDs and index version in its `browser-e2e` artifact. This walkthrough exercises lexical retrieval with eight documents. Production load and recovery evidence use the separate [release procedure](release-evidence.md).
+## Change a synonym and roll back an index
+
+Use the disposable demo project with the original corpus.
+
+1. Clear **Category filter**, turn off **Typo tolerance**, and search for `ecmascript`. Confirm there are no results and note the index version.
+2. Open **Synonyms**. Add a set named `ECMAScript documentation` with terms `ecmascript, javascript` and select **One-way expansion**. Repeat the search. The original index now returns **JavaScript search engine** through the project synonym.
+3. Open **Indexes**, inspect the `search-en` document, and change its JSON title to `JavaScript search engine release candidate`. Save the fields and wait for the new index version to become active. Repeat the search and verify the new title.
+4. In **Indexes**, activate the original version. Repeat the search to see the original title and version number. The synonym still applies because it is project-level configuration. The stored edit also persists and will be indexed again on the next rebuild.
+
+The **container-smoke** job imports the same corpus into a disposable stack and verifies this sequence in Chromium. Its `browser-e2e` artifact includes screenshots, the tested index versions, and the restored search result. This walkthrough exercises lexical retrieval with eight documents. Production load and recovery evidence use the separate [release procedure](release-evidence.md).
