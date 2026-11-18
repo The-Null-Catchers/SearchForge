@@ -119,3 +119,7 @@ Inspecting stored content and crawl results: [explorers](docs/explorers.md).
 Permanent index removal and retry semantics: [safe index deletion](docs/index-deletion.md).
 
 Source erasure and retained version fencing: [safe source deletion](docs/source-deletion.md).
+
+## Portfolio roadmap
+
+See the [repository-specific portfolio roadmap](PORTFOLIO_ROADMAP.md) for priorities, acceptance criteria, demo scope, and release evidence. This complements the existing implementation and status documentation.
