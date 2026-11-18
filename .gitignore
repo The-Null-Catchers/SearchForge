@@ -13,3 +13,4 @@ storage/
 .tmp/
 .turbo/
 .dart_tool/
+/backups/

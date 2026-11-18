@@ -2,6 +2,12 @@
 
 SearchForge does not publish performance or recovery claims without measured evidence. The release tooling records the corpus, target, hardware context, exact Git SHA, load results, restore rehearsal output, and checksums needed to make v1 evidence reviewable.
 
+## Disposable CI rehearsal
+
+After the browser demo seeds eight synthetic documents, the **container-smoke** job measures 120 search requests with five concurrent clients and 20 warmup requests. The Docker stack and load client share a GitHub-hosted runner. The artifact contains host details, round-trip percentiles, throughput, the error rate, and the input document count.
+
+The same run backs up the demo stack, checks the restored PostgreSQL document and active-index counts, compares the immutable segment hashes, and reads a known test object through a MinIO server started from the restored volume. It publishes the checks and checksums in the `ci-recovery` artifact. The backup itself contains database and object data and stays on the disposable runner. Release benchmarking and recovery validation still require the target deployment.
+
 ## Full VPS evidence
 
 Run the full evidence collector on the deployed Linux host after creating a fresh backup set. The release collector requires a clean HTTPS origin (without URL credentials, path, query or fragment); development-only HTTP, localhost, single-label hostnames and literal IPv4/IPv6 endpoints are rejected before evidence collection. This is a release evidence requirement, not a restriction on local development. It requires a search-only API key; the key is consumed from the environment and is never written to the evidence bundle.
