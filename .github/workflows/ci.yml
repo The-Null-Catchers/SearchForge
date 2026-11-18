@@ -118,6 +118,7 @@ jobs:
             -e SEARCHFORGE_E2E_BASE_URL=http://127.0.0.1 \
             -e SEARCHFORGE_E2E_ARTIFACTS=/artifacts/browser-e2e \
             -v "$PWD/tests/browser:/tests:ro" \
+            -v "$PWD/fixtures:/fixtures:ro" \
             -v "$PWD/artifacts:/artifacts" \
             mcr.microsoft.com/playwright:v1.55.0-noble \
             bash -lc 'npm install --global --silent playwright@1.55.0 && NODE_PATH=$(npm root -g) node /tests/e2e.cjs'

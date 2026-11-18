@@ -109,6 +109,8 @@ MVP focuses on lexical retrieval. The core exposes boundaries for sharding, repl
 
 ## SDKs and demo corpus
 
+Try Arabic search, category filters, typo tolerance, and BM25 explanations with the [Search Playground demo](docs/playground-demo.md).
+
 See [SDK usage](docs/sdk.md), [demo and benchmarks](docs/benchmarking.md) and
 [implementation status](docs/status.md). SDK packages are not published yet.
 

@@ -1,5 +1,6 @@
 const fs = require("node:fs");
 const path = require("node:path");
+const { setTimeout: delay } = require("node:timers/promises");
 const { chromium } = require("playwright");
 
 const baseUrl = (process.env.SEARCHFORGE_E2E_BASE_URL || "http://127.0.0.1").replace(/\/$/, "");
@@ -38,6 +39,88 @@ async function verifyAccountSecurityRoutes(page) {
   await page.getByRole("heading", { name: "Verify your email", exact: true }).waitFor({ timeout: 5_000 });
   assert(!page.url().includes("token="), "Verification token was not scrubbed from browser history");
   assert(await page.getByRole("button", { name: "Verify email", exact: true }).isEnabled(), "Verify-email submit should be enabled when a token is present");
+}
+
+
+async function verifySearchPlayground(page) {
+  async function request(method, route, token, data) {
+    const response = await page.request.fetch(`${baseUrl}${route}`, {
+      method, headers: { authorization: `Bearer ${token}` }, data
+    });
+    assert(response.ok(), `${method} ${route} returned HTTP ${response.status()}`);
+    return response.json();
+  }
+
+  const accessToken = await page.evaluate(() => sessionStorage.getItem("sf_access_token"));
+  assert(accessToken, "Browser session does not have an access token");
+  const { projects } = await request("GET", "/v1/me/projects", accessToken);
+  const docs = projects.find(project => project.slug === "docs-search");
+  const labs = projects.find(project => project.slug === "product-catalog");
+  assert(docs && labs, "Seeded projects are missing");
+
+  const keysRoute = `/v1/projects/${docs.id}/api-keys`;
+  const { key: indexingKey } = await request("POST", keysRoute, accessToken, { name: "Browser fixture import", kind: "indexing" });
+  const { key: searchKey } = await request("POST", keysRoute, accessToken, { name: "Browser playground", kind: "search" });
+  const documents = JSON.parse(fs.readFileSync(path.join(__dirname, "../fixtures/demo-documents.json"), "utf8"));
+  const batch = await request("POST", "/v1/indexes/docs/documents/batch", indexingKey, { documents });
+  let state;
+  const deadline = Date.now() + 60_000;
+  while (Date.now() < deadline) {
+    const job = await request("GET", `/v1/jobs/${batch.jobId}`, accessToken);
+    state = job.state;
+    if (state === "completed" || state === "failed" || state === "cancelled") break;
+    await delay(500);
+  }
+  assert(state === "completed", `Portfolio indexing job ended in state ${state}`);
+
+  await page.getByRole("link", { name: "Search Playground", exact: true }).click();
+  await page.getByRole("heading", { name: "Search Playground", exact: true }).waitFor();
+  const projectSelector = page.locator("select.project-select");
+  await projectSelector.selectOption(docs.id);
+  const keyInput = page.getByLabel("Search API key");
+  const results = page.getByRole("region", { name: "Search results" });
+  const runSearch = page.getByRole("button", { name: "Run search", exact: true });
+  await keyInput.fill(searchKey);
+
+  async function search() {
+    const reply = page.waitForResponse(response =>
+      response.url().endsWith("/v1/indexes/docs/search") && response.request().method() === "POST");
+    await runSearch.click();
+    const response = await reply;
+    assert(response.ok(), `Playground search returned HTTP ${response.status()}`);
+    await results.getByRole("status").waitFor();
+    return response.json();
+  }
+
+  await page.getByRole("button", { name: "Arabic search", exact: true }).click();
+  await page.getByLabel("Category filter").clear();
+  const unfiltered = await search();
+  assert(unfiltered.hits.some(hit => hit.document.metadata?.category === "guides"), "Arabic query did not match a guide before filtering");
+
+  await page.getByLabel("Category filter").fill("docs");
+  const arabic = await search();
+  const arabicHit = results.getByRole("article").filter({ has: page.getByRole("heading", { name: "محرك بحث عربي", exact: true }) });
+  await arabicHit.getByText("BM25 score breakdown", { exact: true }).click();
+  assert(arabic.hits.some(hit => hit.id === "search-ar") && arabic.hits.every(hit => hit.document.metadata?.category === "docs"), "Arabic category filter returned unexpected documents");
+  assert(await arabicHit.locator("dl dt").count() > 0, "Arabic result is missing BM25 components");
+  await page.screenshot({ path: path.join(artifactsDir, "playground-arabic.png"), fullPage: true });
+
+  await page.getByRole("button", { name: "English typo", exact: true }).click();
+  await page.getByLabel("Typo tolerance").uncheck();
+  const exact = await search();
+  assert(exact.total === 0, "Misspelled query without typo tolerance should have no matches");
+  await page.getByLabel("Typo tolerance").check();
+  const typo = await search();
+  const typoHit = results.getByRole("article").filter({ has: page.getByRole("heading", { name: "JavaScript search engine", exact: true }) });
+  await typoHit.getByText("BM25 score breakdown", { exact: true }).click();
+  assert(typo.hits[0]?.id === "search-en", "Typo-tolerant query did not rank the expected document first");
+  assert(typo.debug?.expandedTerms?.javscript?.includes("javascript"), "Typo expansion did not include javascript");
+  await page.screenshot({ path: path.join(artifactsDir, "playground-typo.png"), fullPage: true });
+
+  await projectSelector.selectOption(labs.id);
+  await results.getByText("Run a query to see matching documents.").waitFor();
+  assert(await keyInput.inputValue() === "", "The previous project's API key remained in the form");
+  return { indexedDocuments: documents.length, indexVersion: arabic.indexVersion, arabicHits: arabic.hits.map(hit => hit.id), typoTopHit: typo.hits[0].id };
 }
 
 async function main() {
@@ -91,13 +174,15 @@ async function main() {
     await page.getByRole("heading", { name: "Analytics", exact: true }).waitFor({ timeout: 15_000 });
     assert(page.url().endsWith("/dashboard/analytics"), "Authenticated dashboard route did not survive reload");
 
-    if (pageErrors.length > 0) throw new Error(`Browser page errors: ${pageErrors.join(" | ")}`);
-
     await page.screenshot({ path: path.join(artifactsDir, "dashboard-analytics.png"), fullPage: true });
+    const analyticsUrl = page.url();
+    const playground = await verifySearchPlayground(page);
+    if (pageErrors.length > 0) throw new Error(`Browser page errors: ${pageErrors.join(" | ")}`);
     fs.writeFileSync(path.join(artifactsDir, "result.json"), JSON.stringify({
       status: "passed",
-      url: page.url(),
+      url: analyticsUrl,
       projectOptions,
+      playground,
       accountSecurityRoutes: ["forgot-password", "reset-password", "verify-email"]
     }, null, 2));
   } catch (error) {
