@@ -1,59 +1,56 @@
-# SearchForge — خطة البورتفيليو
+# SearchForge portfolio roadmap
 
-مرجع التقييم الأساسي: 17 نوفمبر 2026. تحديث نشر الخطة داخل المستودع: 18 نوفمبر 2026.
+Baseline reviewed on November 17, 2026. Repository roadmap published on November 18, 2026.
 
-الخطة خاصة بهذا المستودع، ومستخلصة من خطة Null Catchers المشتركة. وصف «الموجود الموثق» يعكس المراجعة بتاريخها؛ تحقّق من الكود ووثائق الحالة الحالية قبل إنشاء مهمة جديدة. لا تعِد تنفيذ ميزة موجودة، ولا تعتبر وجود تعريف CI دليلًا على نجاح تشغيله.
+This roadmap applies to this repository and follows the shared Null Catchers portfolio plan. Verify the documented state against the current code and runs before starting work.
 
-**تقدير شريحة العرض الأولى:** 20–35 ساعة. التقدير تخطيطي لمطور يعرف المشروع، ويستثني انتظار حسابات المتاجر والمراجعات الخارجية وتجهيز بيئة الهدف. لا يغطي جميع بنود P2.
+**Estimated initial demo effort** 20–35 hours for a developer familiar with the project. The estimate excludes external reviews, store accounts, target environment setup, and later milestones.
 
-## الأولويات الخاصة بالمشروع
+## Project priorities
 
-**الموجود الموثق:** محرك BM25 وتحليل عربي/إنجليزي وفهرس ومزحف ونسخ immutable وواجهة embed، مع أدوات قياس واستعادة وأدلة إصدار. وثيقة الحالة تصف المتبقي للـMVP بأنه إثبات بيئي، لا إعادة بناء المحرك.
+**Documented state** The search engine supports BM25, Arabic and English analysis, crawling, immutable index versions, and an embeddable interface. It provides load, recovery, and release-evidence tooling. Target deployment evidence remains the main MVP gap.
 
-**P0 — أول مسار قابل للعرض** ثبّت دليل إصدار في بيئة الهدف بقياس حمل واستعادة معزولة.
+**P0 — Demo** Collect target-environment load and recovery evidence using a documented corpus. Preserve the existing reproducible Arabic search, typo, filtering, and ranking explanation demo.
 
-**P1 — التميز:** أضف مجموعة relevance صغيرة بأحكام معلنة وقارن إعدادين للمحلل أو الترتيب. انشر p50/p95/p99 وthroughput ونسبة الخطأ مع حجم corpus والعتاد والإحماء والتزامن؛ لا تضع أهداف README على أنها نتائج.
+**P1 — Validation and depth** Create a small relevance set with published judgments and compare two ranking or analyzer configurations. Report percentiles, throughput and errors with corpus size, hardware, warmup, and concurrency.
 
-**P2 — لاحقًا:** انشر SDK بعد حسم ملكية الحزمة، ثم قيّم hybrid/vector بحثًا عن تحسن مقاس. sharding ليس شرطًا لنسخة البورتفيليو.
+**P2 — Later** Publish the SDK once package ownership is resolved. Evaluate hybrid or vector search against measured relevance. Sharding is outside this portfolio milestone.
 
-**معيار الإنجاز:** استعلامات متكررة تعطي نتائج قابلة للتفسير، ترقية فهرس وrollback مثبتان، تقرير أداء قابل للإعادة، واستعادة snapshot إلى بيئة منفصلة دون تغيير الأصل.
+**Acceptance criteria** Queries give reproducible, explainable results. Index promotion and rollback are verified, and an isolated restore preserves the source.
 
-**الديمو:** بحث عربي مع typo → explain → تعديل synonym → إصدار فهرس جديد → rollback. **الأدلة:** [الحالة](https://github.com/The-Null-Catchers/SearchForge/blob/main/docs/status.md)، [أدلة الإصدار](https://github.com/The-Null-Catchers/SearchForge/blob/main/docs/release-evidence.md).
+**Demo scenario** Search with an Arabic typo → inspect ranking → edit a synonym → build an index version → roll back. [Status](https://github.com/The-Null-Catchers/SearchForge/blob/main/docs/status.md), [Release evidence](https://github.com/The-Null-Catchers/SearchForge/blob/main/docs/release-evidence.md).
 
-## تقدم التنفيذ
+## Progress
 
-- [دليل Search Playground](docs/playground-demo.md) يوثّق البحث العربي والفلترة وتصحيح الأخطاء وتفسير الترتيب باستخدام corpus اصطناعي. ينتج اختبار المتصفح لقطات ونتائج مرتبطة بتشغيل CI.
-- يغطي الدليل واختبار المتصفح أيضًا إضافة مرادف، وبناء إصدار جديد بعد تعديل مستند، وتفعيل الإصدار السابق للتحقق من استعادة نتيجة البحث.
-- يشغّل CI قياس حمل على البيانات الاصطناعية ويتحقق من استعادة PostgreSQL والفهرس وMinIO. راجع [أدلة الإصدار](docs/release-evidence.md) لحدود التجربة.
-- يتبقى قياس الحمل والاستعادة المعزولة في بيئة الهدف.
+- The [Search Playground guide](docs/playground-demo.md) covers Arabic search, filtering, typo correction, ranking explanations, synonyms, and index rollback on a synthetic corpus.
+- CI measures load and verifies PostgreSQL, index, and MinIO recovery. The [release evidence guide](docs/release-evidence.md) documents the scope of that rehearsal.
+- Load measurement and isolated recovery in the target environment remain pending.
 
-## الدفعة التالية
+## Next milestones
 
-يوثق [دليل الإصدار](docs/release-evidence.md) تجربة CI على بيانات اصطناعية، ويغطي [عرض المتصفح](docs/playground-demo.md) البحث العربي والفلترة والمرادفات والرجوع إلى إصدار سابق.
+1. [ ] Document corpus, hardware, SHA, warmup, concurrency, and queries. Record p50, p95, p99, throughput, and error rate.
+2. [ ] Restore to an isolated environment and compare document count, active index, segment hashes, and a known object. Verify a reference Arabic query.
+3. [ ] Link the results to a release when the target environment is available and identify the environment for each measurement.
 
-1. [ ] سجّل المجموعة والعتاد وSHA والإحماء والتزامن والاستعلامات. احفظ p50 وp95 وp99 ومعدل الأخطاء ومعدل الطلبات تحت الإعداد الموثق.
-2. [ ] استعد نسخة اختبار في بيئة معزولة وقارن عدد الوثائق والفهرس النشط وبصمات المقاطع وقراءة كائن معلوم. أعد استعلامًا عربيًا مرجعيًا.
-3. [ ] اربط النتائج بالإصدار عند توفر بيئة الهدف، مع إسناد كل قياس إلى البيئة التي أُجري فيها.
+## Portfolio acceptance checklist
 
-## بوابة قبول نسخة البورتفيليو
+- [ ] Another person can reproduce the primary workflow from a clean checkout using the README and test credentials or fixtures.
+- [ ] The demo tells one complete story with a defined user, problem, and saved result.
+- [ ] Tests cover the main flow, an important failure, and access boundaries when multiple accounts are involved.
+- [ ] Demo data is labeled synthetic and reproducible. Review screenshots and recordings for secrets and customer data.
+- [ ] Include four to six real screenshots where appropriate, a 60–120 second recording, and working links. Identify the revision used for capture.
+- [ ] The README describes implemented capabilities, setup, architecture, limits, tests, and the demo.
+- [ ] A short case study explains two engineering decisions, a considered alternative, and how the system handles an actual failure.
+- [ ] Release evidence records the commit SHA, CI, prerequisites, and limits. Performance data includes workload, hardware, and method.
+- [ ] Licensing and contributor attribution are settled before distribution. Choose the license for each repository individually.
 
-- [ ] يستطيع شخص آخر تشغيل المسار الرئيسي من checkout نظيف، باتباع README، دون أسرار شخصية.
-- [ ] توجد قصة واحدة مكتملة: مستخدم محدد، مشكلة محددة، ومسار بداية إلى نتيجة محفوظة.
-- [ ] ينجح اختبار للمسار الرئيسي وحالة فشل مهمة، وتُختبر حدود الصلاحيات حيث توجد حسابات متعددة.
-- [ ] توجد بيانات عرض اصطناعية معلنة، قابلة لإعادة الإنشاء؛ ولا توجد بيانات عملاء أو أسرار في اللقطات.
-- [ ] توجد 4–6 لقطات حقيقية أو العدد الملائم للأداة، وفيديو 60–120 ثانية، وروابط تعمل. تُلتقط الأدلة من إصدار معروف.
-- [ ] README يوضح المزايا الفعلية، طريقة التشغيل، الرسم المعماري، القيود، وروابط الاختبارات والديمو.
-- [ ] Case study قصيرة تشرح قرارين هندسيين، بديلًا جرى استبعاده ولماذا، وفشلًا حقيقيًا وكيف يعالجه النظام.
-- [ ] صفحة Release تسجل SHA وCI والمتطلبات والقيود. لا تُنشر أرقام أداء دون workload وعتاد وطريقة قياس.
-- [ ] حُسمت سياسة الترخيص ونسب المساهمات قبل التوزيع؛ لا نختار ترخيصًا تلقائيًا لجميع المستودعات.
+A hosted demo is optional. Code execution, server administration, and secret management can be demonstrated through a recording and a reproducible isolated environment. Keep public demo access scoped to the activities it needs.
 
-الديمو المستضاف مفيد وليس شرطًا لكل أداة. أدوات تنفيذ الكود وإدارة الخوادم والأسرار يمكن عرضها بفيديو وبيئة معزولة وتجربة محلية قابلة للإعادة. لا تفتح تنفيذًا عامًا غير محدود لمجرد وجود رابط بورتفيليو.
+## Implementation and follow-up
 
-## التنفيذ والمتابعة
-
-- حوّل P0 إلى مهام صغيرة، لكل منها سلوك متوقع ومعيار قبول واختبار مناسب.
-- ابدأ بتأكيد الموجود؛ عدّل هذه الخطة عندما يغلق بند بدليل مرتبط بcommit أو PR.
-- سجّل مصدر بيانات الديمو، والـSHA الذي التُقطت منه الأدلة، وحدود التجربة الفعلية.
-- راجع الفرق النهائي وانتظر نجاح الفحوص المطلوبة لنفس SHA قبل الدمج، مع احترام حماية الفرع.
-- إذا كان التعديل وثائق فقط ولا يوجد فحص ينطبق عليه، سجّل التحقق من محتواها وروابطها؛ لا تسجل اختبارات تشغيل لم تُنفّذ.
-- لا تُنشر أرقام أداء أو ادعاءات أمان أو جاهزية إنتاج بلا دليل مناسب.
+- Break P0 into tasks with expected behavior, acceptance criteria, and a suitable test.
+- Verify existing functionality first. Update this plan when evidence tied to a commit or PR closes a milestone.
+- Record the fixture source, the revision used for evidence, and the tested limits.
+- Review the final diff and verify required checks for its exact SHA before merging. Follow branch protection.
+- For documentation-only changes with no applicable workflow, verify content and links and record the checks actually performed.
+- Tie performance, security, and readiness claims to supporting evidence.
