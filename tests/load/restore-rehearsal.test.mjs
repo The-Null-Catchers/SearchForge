@@ -12,6 +12,11 @@ const content = readFileSync(script, "utf8");
 test("restore script parses as Bash", () => {
   assert.equal(spawnSync("bash", ["-n", script]).status, 0);
 });
+test("restore waits for TCP before opening the dump", () => {
+  assert.match(content, /pg_isready --host=127\.0\.0\.1/);
+  assert.match(content, /postgres_ready >\/dev\/null\n\ncat "\$BACKUP_DIR\/postgres\.dump"/);
+});
+
 test("restore refuses empty table and archive counts", () => {
   for (const name of ["PG_TABLE_COUNT", "INDEX_COUNT", "MINIO_COUNT"]) {
     assert.match(content, new RegExp('\\[\\[ "\\$' + name + '" =~ \\^\\[1-9\\]\\[0-9\\]\\*\\$ \\]\\]'));

@@ -66,11 +66,16 @@ docker run -d --name "$PG_CONTAINER" \
   -e POSTGRES_DB=searchforge \
   postgres:17-alpine >/dev/null
 
+postgres_ready() {
+  # The image's initialization server accepts Unix sockets only.
+  docker exec "$PG_CONTAINER" pg_isready --host=127.0.0.1 -U searchforge -d searchforge
+}
+
 for _ in $(seq 1 30); do
-  if docker exec "$PG_CONTAINER" pg_isready -U searchforge -d searchforge >/dev/null 2>&1; then break; fi
+  if postgres_ready >/dev/null 2>&1; then break; fi
   sleep 1
 done
-docker exec "$PG_CONTAINER" pg_isready -U searchforge -d searchforge >/dev/null
+postgres_ready >/dev/null
 
 cat "$BACKUP_DIR/postgres.dump" | docker exec -i "$PG_CONTAINER" pg_restore \
   --username=searchforge --dbname=searchforge --no-owner --no-privileges --exit-on-error
