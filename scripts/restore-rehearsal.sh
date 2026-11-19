@@ -89,6 +89,15 @@ PG_DOCUMENT_COUNT="$(docker exec "$PG_CONTAINER" psql -U searchforge -d searchfo
 PG_ACTIVE_VERSION_COUNT="$(docker exec "$PG_CONTAINER" psql -U searchforge -d searchforge -Atc "select count(*) from indexes where active_version_id is not null;")"
 echo "[restore-test] live documents: $PG_DOCUMENT_COUNT"
 echo "[restore-test] active indexes: $PG_ACTIVE_VERSION_COUNT"
+if [[ "${SEARCHFORGE_RESTORE_PRINT_ACTIVE_SEGMENTS:-0}" == 1 ]]; then
+  active_segments="$(docker exec "$PG_CONTAINER" psql -U searchforge -d searchforge -Atc \
+    "select i.id, v.sequence from indexes i join index_versions v on v.id = i.active_version_id where v.index_id = i.id and v.state = 'active' order by i.id;")"
+  while IFS='|' read -r index_id version; do
+    [[ -n "$index_id" ]] || continue
+    echo "[restore-test] active segment: $index_id $version"
+  done <<< "$active_segments"
+fi
+
 
 echo "[restore-test] restoring index and object archives into isolated volumes"
 docker volume create "$INDEX_VOLUME" >/dev/null
