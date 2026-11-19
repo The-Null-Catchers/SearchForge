@@ -4,9 +4,9 @@ SearchForge does not publish performance or recovery claims without measured evi
 
 ## Disposable CI rehearsal
 
-After the browser demo seeds eight synthetic documents, the **container-smoke** job measures 120 search requests with five concurrent clients and 20 warmup requests. The Docker stack and load client share a GitHub-hosted runner. The artifact contains host details, round-trip percentiles, throughput, the error rate, and the input document count.
+After the browser demo seeds eight synthetic documents, the **container-smoke** job measures 120 search requests with five concurrent clients and 20 warmup requests. The Docker stack and load client share a GitHub-hosted runner. The artifact contains host details, round-trip percentiles, throughput, the error rate, the input document count, and the ordered synthetic query set and warmup and concurrency settings.
 
-The same run backs up the demo stack, checks the restored PostgreSQL document and active-index counts, compares the immutable segment hashes, and reads a known test object through a MinIO server started from the restored volume. It publishes the checks and checksums in the `ci-recovery` artifact. The backup itself contains database and object data and stays on the disposable runner. Release benchmarking and recovery validation still require the target deployment.
+The same run backs up the demo stack, checks the restored PostgreSQL document and active-index counts, compares the immutable segment hashes, and reads a known test object through a MinIO server started from the restored volume. The rehearsal also opens the exact restored active segment in the search engine with networking disabled and verifies that the reference Arabic query returns `search-ar`. It publishes the checks and checksums in the `ci-recovery` artifact. The backup itself contains database and object data and stays on the disposable runner. Release benchmarking and recovery validation still require the target deployment.
 
 ## Full VPS evidence
 
