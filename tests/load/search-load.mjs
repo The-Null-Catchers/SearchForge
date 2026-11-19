@@ -132,6 +132,12 @@ const errorRate = failures.length / requests;
 
 const report = {
   generatedAt: finishedAt.toISOString(),
+  provenance: {
+    sourceSha: process.env.SEARCHFORGE_LOAD_SOURCE_SHA ?? null,
+    corpusDescription: process.env.SEARCHFORGE_LOAD_CORPUS ?? null,
+    hardwareDescription: process.env.SEARCHFORGE_LOAD_HARDWARE ?? null,
+    environmentDescription: process.env.SEARCHFORGE_LOAD_ENVIRONMENT ?? null
+  },
   target: { baseUrl, indexSlug },
   configuration: { requests, concurrency, warmupRequests, timeoutMs, queries: queries.length },
   measurement: {
