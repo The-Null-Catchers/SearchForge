@@ -9,7 +9,7 @@ import { test } from "node:test";
 
 const harness = fileURLToPath(new URL("./search-load.mjs", import.meta.url));
 
-async function runHarness(status, payload, maxErrorRate = "0") {
+async function runHarness(status, payload, maxErrorRate = "0", maxP95Ms) {
   const outputDir = await mkdtemp(join(tmpdir(), "searchforge-load-test-"));
   const server = createServer((request, response) => {
     response.writeHead(status, { "content-type": "application/json" });
@@ -30,6 +30,7 @@ async function runHarness(status, payload, maxErrorRate = "0") {
           SEARCHFORGE_LOAD_WARMUP: "1",
           SEARCHFORGE_LOAD_CONCURRENCY: "2",
           SEARCHFORGE_LOAD_MAX_ERROR_RATE: maxErrorRate,
+          ...(maxP95Ms === undefined ? {} : { SEARCHFORGE_LOAD_MAX_P95_MS: maxP95Ms }),
           SEARCHFORGE_LOAD_OUTPUT: outputPath
         },
         stdio: "ignore"
@@ -74,4 +75,14 @@ test("never persists untrusted HTTP error details", async () => {
   assert.equal(exitCode, 1);
   assert.deepEqual(report.measurement.errorCounts, { HTTP_ERROR: 3 });
   assert.equal(JSON.stringify(report).includes(sensitive), false);
+});
+
+test("rejects successful searches exceeding a strict p95 latency budget", async () => {
+  const { exitCode, report } = await runHarness(
+    200, { hits: [], total: 0, processingTimeMs: 1 }, "0", "0.000001"
+  );
+  assert.equal(exitCode, 1);
+  assert.equal(report.measurement.successes, 3);
+  assert.equal(report.thresholds.passed, false);
+  assert.equal(report.thresholds.maxP95Ms, 0.000001);
 });
