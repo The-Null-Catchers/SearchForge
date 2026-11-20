@@ -447,6 +447,8 @@ export class SegmentSearchEngine implements SearchCore {
 
   explain(documentId: string, request: SearchRequest): Record<string, number> {
     const result = this.search({ ...request, debug: true, limit: Math.max(request.limit, this.segment.documentCount) });
-    return result.debug?.components[documentId] ?? {};
+    // Only explain documents that actually satisfy the complete query, including
+    // every quoted phrase. Candidate debug components can include rejected hits.
+    return result.hits.find((hit) => hit.id === documentId)?.explanation ?? {};
   }
 }
