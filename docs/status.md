@@ -165,6 +165,13 @@ See docs/load-testing.md and docs/release-evidence.md. Actual performance number
 - Legacy segments without the dictionary rebuild it once when loaded, preserving backward compatibility.
 - Regression tests guard against full vocabulary iteration on typo queries.
 
+## Portfolio verification (2026-11-20)
+
+- Portfolio UI and bilingual playground merged via [#78](https://github.com/The-Null-Catchers/SearchForge/pull/78).
+- Synthetic bilingual relevance judgments and executable evaluator merged via [#79](https://github.com/The-Null-Catchers/SearchForge/pull/79); metrics are regression evidence, not production-quality claims.
+- Query-scoped posting lookup optimization and phrase-explanation correctness merged via [#80](https://github.com/The-Null-Catchers/SearchForge/pull/80). Its final-head CI passed Node, Dart, security and Compose/Chromium jobs. Quantified before/after performance evidence remains pending.
+- Curated genuine screenshots and target-environment restore/load validation are still pending.
+
 ## Remaining before MVP release evidence is complete
 
 The functional MVP is implemented. Remaining work is environment-specific validation evidence:

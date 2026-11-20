@@ -14,10 +14,11 @@ The repository already implements TypeScript lexical retrieval with Arabic/Engli
 | P0 | Public landing and bilingual core navigation | Merged in #78 | CI passed at `7a1eb0a1a8904d1b5f90d5a2bc2d9091ea89f71c` |
 | P0 | Playground autocomplete, facet actions, highlights, language/published filters | Merged in #78 | Chromium E2E and API helper tests passed |
 | P0 | Reproducible bilingual corpus, typo, synonym, edit and rollback | Already implemented | Existing browser E2E and fixtures |
-| P0 | CI build, unit, integration, Dart and container smoke | Passed for #78; rerun for each new change | [#78 successful CI](https://github.com/The-Null-Catchers/SearchForge/actions/runs/44807361486) |
+| P0 | CI build, unit, integration, Dart and container smoke | Passed on #80 final head | [#80 successful CI](https://github.com/The-Null-Catchers/SearchForge/actions/runs/44814633377) |
 | P0 | Real screenshots from the final running revision | Pending | Capture under docs/images/portfolio |
 | P0 | Final environment-specific load and restore evidence | Pending | docs/release-evidence.md |
-| P1 | Relevance judgments and comparative ranking evaluation | Implemented in #79, final-head CI pending | `node scripts/evaluate-relevance.mjs` after `pnpm build` |
+| P1 | Relevance judgments and comparative ranking evaluation | Merged in #79 | [#79 successful CI](https://github.com/The-Null-Catchers/SearchForge/actions/runs/44809952170); `node scripts/evaluate-relevance.mjs` after `pnpm build` |
+| P1 | Query-scoped postings lookup and correct phrase explanations | Merged in #80 | [#80 successful CI](https://github.com/The-Null-Catchers/SearchForge/actions/runs/44814633377); performance comparison still pending |
 | P1 | Full Arabic localization of secondary management screens | Pending | RTL browser assertions |
 | P1 | License and contributor attribution review | Pending approval | No SDK publication or release |
 | P2 | Sharding, hybrid/vector retrieval and SDK publication | Out of current milestone | Separate design review |
@@ -33,6 +34,13 @@ The repository already implements TypeScript lexical retrieval with Arabic/Engli
 7. Record genuine screenshots and a 60–120 second walkthrough, or provide an executable recording shot list.
 8. Publish measured hardware, corpus, request count, warmup, concurrency, latency percentiles, throughput, errors and isolated restore integrity. Never invent measurements.
 9. Review license, attribution and dependency obligations before any public release or SDK publishing.
+
+## Merge evidence (2026-11-20)
+
+- [PR #78](https://github.com/The-Null-Catchers/SearchForge/pull/78) merged as `edc732e1fc66ebd39e1a0230d8e099c86fb5968d` (portfolio UI and bilingual playground).
+- [PR #79](https://github.com/The-Null-Catchers/SearchForge/pull/79) merged as `3ac8ea01a5ec0f0838c13321fc8159ea5f33003b` (synthetic relevance judgments and evaluator).
+- [PR #80](https://github.com/The-Null-Catchers/SearchForge/pull/80) merged as `9cf35fb17983f429f1c2bab4fd8e9bd11245e081` (query-scoped postings lookups and explain correctness). All four CI jobs passed on its PR head `9734afe6e75ede3134858dafeb3f2b0f8b7c426e`.
+- Passing CI demonstrates functional regression coverage, **not** a quantified speedup or target VPS readiness. CI artifacts are ephemeral; preserve final-run artifacts before they expire.
 
 ## Outstanding release evidence
 

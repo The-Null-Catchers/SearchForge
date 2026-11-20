@@ -26,6 +26,12 @@ The eight-document synthetic corpus in `fixtures/demo-documents.json` covers Eng
 
 The portfolio interface provides a landing page, dashboard, Arabic/English locale switch for core flows, and a playground that exposes search-key authentication, filters, facets, autocomplete, matching-term highlights and score breakdowns. The locale implementation is incremental: some secondary management screens still contain English-only strings.
 
+## Relevance evaluation and explain correctness
+
+The checked-in `fixtures/relevance-judgments.json` grades seven synthetic bilingual queries against the eight-document demo corpus. `node scripts/evaluate-relevance.mjs` executes the real segment builder and search core, reporting per-query and macro-averaged Precision@5, Recall@5, MRR@5 and nDCG@5 with and without typo expansion. These judgments are small, hand-authored and incomplete, so the output is a reproducible regression indicator, not a statistically representative search-quality score. See [relevance evaluation](relevance-evaluation.md).
+
+Search-core scoring now uses query-scoped document-ID posting maps to avoid repeated linear scans during BM25 and phrase evaluation. The `explain` API returns an explanation only when the document satisfies the complete query, including quoted phrases. CI regression tests cover the behavior. No speedup is claimed until comparative measurements on the same dataset and environment are recorded.
+
 ## Performance and recovery evidence
 
 The repository contains a real authenticated HTTP load harness with configurable request count, concurrency, warmup and error/p95 gates. It measures wall-clock p50/p95/p99, throughput and error rate. The disposable CI recovery rehearsal checks PostgreSQL counts, index segment checksums, restored object retrieval, and an Arabic query on the restored active segment.
@@ -44,4 +50,4 @@ These are verification mechanisms, not evidence of a particular VPS latency, thr
 
 ## Future improvements
 
-Publish a relevance judgment set, compare analyzer and ranking configurations, add comprehensive Arabic interface translations, capture genuine release screenshots and a short walkthrough video, and validate performance and restore on the intended target environment. Sharding, hybrid retrieval and SDK publishing remain separate decisions rather than implied completed features.
+Expand the initial relevance judgments with independently labeled real-world-style synthetic queries, compare analyzer and ranking configurations, add comprehensive Arabic interface translations, capture genuine release screenshots and a short walkthrough video, and validate performance and restore on the intended target environment. Sharding, hybrid retrieval and SDK publishing remain separate decisions rather than implied completed features.
