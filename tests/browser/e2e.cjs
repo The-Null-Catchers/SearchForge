@@ -223,10 +223,10 @@ async function main() {
     assert(projectOptions >= 2, `Expected seeded tenant projects, found ${projectOptions}`);
     assert(await page.getByText("Indexed documents", { exact: true }).isVisible(), "Overview metrics did not render");
     await page.screenshot({ path: path.join(artifactsDir, "dashboard-overview.png"), fullPage: true });
-    await page.getByRole("button", { name: "تغيير اللغة" }).click();
+    await page.getByRole("button", { name: "Switch language" }).click();
     await page.waitForFunction(() => document.documentElement.dir === "rtl");
     assert(await page.getByRole("link", { name: "مختبر البحث", exact: true }).isVisible(), "Arabic navigation did not render");
-    await page.getByRole("button", { name: "Switch language" }).click();
+    await page.getByRole("button", { name: "تغيير اللغة" }).click();
     await page.waitForFunction(() => document.documentElement.dir === "ltr");
 
     const initialTheme = await page.locator("html").getAttribute("data-theme");
