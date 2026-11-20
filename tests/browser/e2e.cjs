@@ -100,10 +100,12 @@ async function verifySearchPlayground(page) {
   await page.getByLabel("Category filter").fill("docs");
   const arabic = await search();
   const arabicHit = results.getByRole("article").filter({ has: page.getByRole("heading", { name: "محرك بحث عربي", exact: true }) });
-  await arabicHit.getByText("BM25 score breakdown", { exact: true }).click();
+  await arabicHit.getByText(/BM25 score breakdown/).click();
   assert(arabic.hits.some(hit => hit.id === "search-ar") && arabic.hits.every(hit => hit.document.metadata?.category === "docs"), "Arabic category filter returned unexpected documents");
   assert(await arabicHit.locator("dl dt").count() > 0, "Arabic result is missing BM25 components");
+  assert(await arabicHit.locator("mark.match-highlight").count() > 0, "Arabic result did not highlight matching terms");
   await page.screenshot({ path: path.join(artifactsDir, "playground-arabic.png"), fullPage: true });
+  await page.screenshot({ path: path.join(artifactsDir, "playground-bm25.png"), fullPage: true });
 
   await page.getByRole("button", { name: "English typo", exact: true }).click();
   await page.getByLabel("Typo tolerance").uncheck();
@@ -112,7 +114,7 @@ async function verifySearchPlayground(page) {
   await page.getByLabel("Typo tolerance").check();
   const typo = await search();
   const typoHit = results.getByRole("article").filter({ has: page.getByRole("heading", { name: "JavaScript search engine", exact: true }) });
-  await typoHit.getByText("BM25 score breakdown", { exact: true }).click();
+  await typoHit.getByText(/BM25 score breakdown/).click();
   assert(typo.hits[0]?.id === "search-en", "Typo-tolerant query did not rank the expected document first");
   assert(typo.debug?.expandedTerms?.javscript?.includes("javascript"), "Typo expansion did not include javascript");
   await page.screenshot({ path: path.join(artifactsDir, "playground-typo.png"), fullPage: true });
@@ -200,6 +202,9 @@ async function main() {
   try {
     await verifyAccountSecurityRoutes(page);
 
+    await page.goto(`${baseUrl}/`, { waitUntil: "networkidle", timeout: 30_000 });
+    await page.getByRole("heading", { name: "Search infrastructure, built for your product", exact: true }).waitFor({ timeout: 10_000 });
+    await page.screenshot({ path: path.join(artifactsDir, "landing-page.png"), fullPage: true });
     await page.goto(`${baseUrl}/login`, { waitUntil: "networkidle", timeout: 30_000 });
     assert((await page.locator("h1").textContent())?.trim() === "Sign in", "Login heading did not render");
     const loginBrand = page.locator(".login-card .brand");
@@ -217,6 +222,12 @@ async function main() {
     const projectOptions = await page.locator("select.project-select option").count();
     assert(projectOptions >= 2, `Expected seeded tenant projects, found ${projectOptions}`);
     assert(await page.getByText("Indexed documents", { exact: true }).isVisible(), "Overview metrics did not render");
+    await page.screenshot({ path: path.join(artifactsDir, "dashboard-overview.png"), fullPage: true });
+    await page.getByRole("button", { name: "Switch language" }).click();
+    await page.waitForFunction(() => document.documentElement.dir === "rtl");
+    assert(await page.getByRole("link", { name: "مختبر البحث", exact: true }).isVisible(), "Arabic navigation did not render");
+    await page.getByRole("button", { name: "تغيير اللغة" }).click();
+    await page.waitForFunction(() => document.documentElement.dir === "ltr");
 
     const initialTheme = await page.locator("html").getAttribute("data-theme");
     await page.getByRole("button", { name: "Toggle theme" }).click();

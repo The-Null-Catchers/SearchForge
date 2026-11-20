@@ -56,3 +56,26 @@ export async function publicSearch<T>(indexSlug: string, apiKey: string, body: u
   }
   return response.json() as Promise<T>;
 }
+
+
+export async function publicAutocomplete<T>(
+  indexSlug: string,
+  apiKey: string,
+  query: string,
+  limit = 8,
+  signal?: AbortSignal
+): Promise<T> {
+  const params = new URLSearchParams({ q: query, limit: String(limit) });
+  const response = await fetch(
+    `${API_URL}/v1/indexes/${encodeURIComponent(indexSlug)}/autocomplete?${params.toString()}`,
+    {
+      headers: { Authorization: `Bearer ${apiKey}` },
+      signal
+    }
+  );
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({})) as { error?: { message?: string } };
+    throw new Error(error.error?.message ?? `Autocomplete request failed with status ${response.status}`);
+  }
+  return response.json() as Promise<T>;
+}
