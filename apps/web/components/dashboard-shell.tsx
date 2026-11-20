@@ -3,11 +3,12 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  Activity, BarChart3, Braces, Database, FileSearch, Gauge, KeyRound, ListTree,
+  BarChart3, Braces, Database, Gauge, KeyRound, ListTree,
   Moon, Search, Settings, SlidersHorizontal, Sparkles, Sun, TerminalSquare, WalletCards
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { ProjectProvider, useProject } from "./project-context";\nimport { useLocale } from "./locale-context";
+import { ProjectProvider, useProject } from "./project-context";
+import { useLocale } from "./locale-context";
 
 const navigation = [
   ["/dashboard", "Overview", Gauge],
@@ -26,7 +27,8 @@ const navigation = [
 function InnerShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { projects, projectId, setProjectId } = useProject();\n  const { locale, setLocale, t } = useLocale();
+  const { projects, projectId, setProjectId } = useProject();
+  const { locale, setLocale, t } = useLocale();
   const [commandOpen, setCommandOpen] = useState(false);
   const [filter, setFilter] = useState("");
   const [theme, setTheme] = useState<"dark" | "light">("dark");
@@ -76,8 +78,8 @@ function InnerShell({ children }: { children: React.ReactNode }) {
         <header className="topbar">
           <div className="muted mono" style={{fontSize:12}}>{projects.find((p) => p.id === projectId)?.slug ?? "workspace"}</div>
           <div className="topbar-actions">
-            <button className="icon-btn locale-btn" onClick={() => setLocale(locale === "en" ? "ar" : "en")} aria-label={t("Switch language")}>{locale === "en" ? "العربية" : "English"}</button>\n            <button className="icon-btn" onClick={toggleTheme} aria-label={t("Toggle theme")}>{theme === "dark" ? <Sun size={16}/> : <Moon size={16}/>}</button>
-            <div className="icon-btn" title="System status"><Activity size={16}/></div>
+            <button className="icon-btn locale-btn" onClick={() => setLocale(locale === "en" ? "ar" : "en")} aria-label={t("Switch language")}>{locale === "en" ? "العربية" : "English"}</button>
+            <button className="icon-btn" onClick={toggleTheme} aria-label={t("Toggle theme")}>{theme === "dark" ? <Sun size={16}/> : <Moon size={16}/>}</button>
           </div>
         </header>
         {children}
