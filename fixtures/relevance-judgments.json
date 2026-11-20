@@ -1,0 +1,53 @@
+[
+  {
+    "query": "javascript",
+    "language": "en",
+    "relevant": {
+      "search-en": 3
+    }
+  },
+  {
+    "query": "javscript",
+    "language": "en",
+    "typoTolerance": true,
+    "relevant": {
+      "search-en": 3
+    }
+  },
+  {
+    "query": "distributed systems",
+    "language": "en",
+    "relevant": {
+      "distributed-en": 3
+    }
+  },
+  {
+    "query": "crawler",
+    "language": "en",
+    "relevant": {
+      "crawler-en": 3
+    }
+  },
+  {
+    "query": "محرك بحث",
+    "language": "ar",
+    "relevant": {
+      "search-ar": 3,
+      "mixed": 1
+    }
+  },
+  {
+    "query": "تطبيع النص العربي",
+    "language": "ar",
+    "relevant": {
+      "normalization-ar": 3
+    }
+  },
+  {
+    "query": "الطوابير",
+    "language": "ar",
+    "relevant": {
+      "queues-ar": 3
+    }
+  }
+]

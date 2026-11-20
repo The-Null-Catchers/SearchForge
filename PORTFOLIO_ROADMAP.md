@@ -11,13 +11,13 @@ The repository already implements TypeScript lexical retrieval with Arabic/Engli
 | Priority | Work | State | Verification |
 | --- | --- | --- | --- |
 | P0 | Dedicated branch, audit and initial SHA | Done | GitHub branch and commit history |
-| P0 | Public landing and bilingual core navigation | Implemented, pending final browser verification | New web unit and CI build |
-| P0 | Playground autocomplete, facet actions, highlights, language/published filters | Implemented, pending browser verification | API helper tests and existing E2E to extend |
+| P0 | Public landing and bilingual core navigation | Merged in #78 | CI passed at `7a1eb0a1a8904d1b5f90d5a2bc2d9091ea89f71c` |
+| P0 | Playground autocomplete, facet actions, highlights, language/published filters | Merged in #78 | Chromium E2E and API helper tests passed |
 | P0 | Reproducible bilingual corpus, typo, synonym, edit and rollback | Already implemented | Existing browser E2E and fixtures |
-| P0 | CI build, unit, integration, Dart and container smoke | Required on final SHA | GitHub Actions run |
+| P0 | CI build, unit, integration, Dart and container smoke | Passed for #78; rerun for each new change | [#78 successful CI](https://github.com/The-Null-Catchers/SearchForge/actions/runs/44807361486) |
 | P0 | Real screenshots from the final running revision | Pending | Capture under docs/images/portfolio |
 | P0 | Final environment-specific load and restore evidence | Pending | docs/release-evidence.md |
-| P1 | Relevance judgments and comparative ranking evaluation | Pending | Reproducible query set |
+| P1 | Relevance judgments and comparative ranking evaluation | Implemented in #79, final-head CI pending | `node scripts/evaluate-relevance.mjs` after `pnpm build` |
 | P1 | Full Arabic localization of secondary management screens | Pending | RTL browser assertions |
 | P1 | License and contributor attribution review | Pending approval | No SDK publication or release |
 | P2 | Sharding, hybrid/vector retrieval and SDK publication | Out of current milestone | Separate design review |
