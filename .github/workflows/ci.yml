@@ -52,6 +52,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
+      - name: Verify bilingual relevance judgments and evaluator
+        run: node scripts/evaluate-relevance.mjs
       - run: pnpm test
       - name: Validate load-harness measurement integrity
         run: node --test tests/load/search-load.test.mjs
