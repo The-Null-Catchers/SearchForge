@@ -268,8 +268,7 @@ export class SegmentSearchEngine implements SearchCore {
     return this.segment.postings[field]?.[term];
   }
 
-  private bm25(field: string, termPostings: TermPostings, documentId: string): number {
-    const posting = termPostings.postings.find((value) => value.documentId === documentId);
+  private bm25(field: string, termPostings: TermPostings, documentId: string, posting: TermPostings["postings"][number] | undefined): number {
     if (!posting) return 0;
     const n = Math.max(1, this.segment.documentCount);
     const df = termPostings.documentFrequency;
@@ -282,12 +281,13 @@ export class SegmentSearchEngine implements SearchCore {
     return idf * ((tf * (k1 + 1)) / (tf + k1 * (1 - b + b * (length / average))));
   }
 
-  private phraseMatch(documentId: string, phrase: string[]): boolean {
+  private phraseMatch(documentId: string, phrase: string[], postingLookup: Map<TermPostings, Map<string, TermPostings["postings"][number]>>): boolean {
     for (const [field, fieldTerms] of Object.entries(this.segment.postings)) {
       const lists: number[][] = [];
       let missing = false;
       for (const term of phrase) {
-        const posting = fieldTerms[term]?.postings.find((value) => value.documentId === documentId);
+        const termPostings = fieldTerms[term];
+        const posting = termPostings ? postingLookup.get(termPostings)?.get(documentId) : undefined;
         if (!posting) {
           missing = true;
           break;
@@ -317,6 +317,19 @@ export class SegmentSearchEngine implements SearchCore {
       }
     }
 
+    // Build lookups only for terms used by this query, avoiding a linear postings
+    // scan for every candidate document and BM25/phrase component.
+    const postingLookup = new Map<TermPostings, Map<string, TermPostings["postings"][number]>>();
+    const requiredTerms = new Set([...queryTerms, ...parsed.phrases.flat()]);
+    for (const fieldTerms of Object.values(this.segment.postings)) {
+      for (const term of requiredTerms) {
+        const termPostings = fieldTerms[term];
+        if (termPostings && !postingLookup.has(termPostings)) {
+          postingLookup.set(termPostings, new Map(termPostings.postings.map((posting) => [posting.documentId, posting])));
+        }
+      }
+    }
+
     const scores = new Map<string, number>();
     const components: Record<string, Record<string, number>> = {};
     const matchedPhrases: string[] = [];
@@ -330,7 +343,7 @@ export class SegmentSearchEngine implements SearchCore {
         for (const term of queryTerms) {
           const postings = fieldTerms[term];
           if (!postings) continue;
-          const value = this.bm25(field, postings, id) * boost;
+          const value = this.bm25(field, postings, id, postingLookup.get(postings)?.get(id)) * boost;
           if (value > 0) {
             score += value;
             components[id]![`bm25:${field}:${term}`] = value;
@@ -338,7 +351,7 @@ export class SegmentSearchEngine implements SearchCore {
         }
       }
       for (const phrase of parsed.phrases) {
-        if (this.phraseMatch(id, phrase)) {
+        if (this.phraseMatch(id, phrase, postingLookup)) {
           const phraseBoost = 2;
           score += phraseBoost;
           const key = phrase.join(" ");
