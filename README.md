@@ -1,5 +1,12 @@
 # SearchForge
 
+**Self-hosted bilingual search infrastructure for developers.** Crawl and ingest documents, query Arabic and English content, and inspect explainable BM25 ranking from a tenant-scoped dashboard.
+
+**Who it is for:** application developers, documentation teams and engineers who need inspectable lexical search without depending on a hosted search vendor. SearchForge is a portfolio engineering system, not a claimed production-certified service.
+
+[Engineering case study](docs/CASE_STUDY.md) · [Portfolio roadmap](PORTFOLIO_ROADMAP.md) · [Demo walkthrough](docs/playground-demo.md) · [Release evidence](docs/release-evidence.md)
+
+
 SearchForge is a developer-focused search platform that **crawls, analyzes, indexes, ranks, and searches content**. It is deliberately not a CRUD wrapper around a hosted search vendor: the repository contains its own language analyzers, inverted index, BM25 scorer, prefix/typo candidate generation, immutable index version model, crawler safety layer, job pipeline, SDKs, and observability.
 
 ```text
@@ -87,6 +94,18 @@ Content-Type: application/json
   "limit": 20
 }
 ```
+
+## Demonstration and screenshots
+
+The local demo uses eight synthetic Arabic, English and mixed-language documents. Follow [the repeatable Search Playground walkthrough](docs/playground-demo.md) for search, typo tolerance, synonyms, immutable index rebuild and rollback. Existing Chromium tests capture genuine screenshots as CI artifacts; final curated screenshots under `docs/images/portfolio/` are pending capture from the final running revision.
+
+## Testing
+
+With Node 22 and pnpm 10.15.1, run `pnpm install --frozen-lockfile`, `pnpm build`, `pnpm test`, and `pnpm typecheck`. Database integration requires PostgreSQL 17 and Redis 7; see [development](docs/development.md) and [CI](.github/workflows/ci.yml). Dart SDK validation uses `dart analyze --fatal-infos` and `dart test` in `packages/sdk-flutter`. Docker Compose CI exercises Chromium browser E2E and disposable backup/restore checks.
+
+## Known limitations
+
+The engine is lexical rather than vector-based; Arabic stemming is lightweight; SDKs are not published; the initial topology is not sharded. Some secondary dashboard screens remain English-only. Representative VPS latency and recovery measurements, portfolio screenshots from the final SHA, and license/contributor review remain pending. See [case study](docs/CASE_STUDY.md).
 
 ## Engineering targets
 
