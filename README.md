@@ -4,7 +4,7 @@
 
 **Who it is for:** application developers, documentation teams and engineers who need inspectable lexical search without depending on a hosted search vendor. SearchForge is a portfolio engineering system, not a claimed production-certified service.
 
-[Engineering case study](docs/CASE_STUDY.md) · [Portfolio roadmap](PORTFOLIO_ROADMAP.md) · [Demo walkthrough](docs/playground-demo.md) · [Release evidence](docs/release-evidence.md)
+[Engineering case study](docs/CASE_STUDY.md) · [Portfolio roadmap](PORTFOLIO_ROADMAP.md) · [Demo walkthrough](docs/playground-demo.md) · [Relevance evaluation](docs/relevance-evaluation.md) · [Release evidence](docs/release-evidence.md)
 
 
 SearchForge is a developer-focused search platform that **crawls, analyzes, indexes, ranks, and searches content**. It is deliberately not a CRUD wrapper around a hosted search vendor: the repository contains its own language analyzers, inverted index, BM25 scorer, prefix/typo candidate generation, immutable index version model, crawler safety layer, job pipeline, SDKs, and observability.
@@ -102,6 +102,10 @@ The local demo uses eight synthetic Arabic, English and mixed-language documents
 ## Testing
 
 With Node 22 and pnpm 10.15.1, run `pnpm install --frozen-lockfile`, `pnpm build`, `pnpm test`, and `pnpm typecheck`. Database integration requires PostgreSQL 17 and Redis 7; see [development](docs/development.md) and [CI](.github/workflows/ci.yml). Dart SDK validation uses `dart analyze --fatal-infos` and `dart test` in `packages/sdk-flutter`. Docker Compose CI exercises Chromium browser E2E and disposable backup/restore checks.
+
+## Offline relevance evaluation
+
+After `pnpm install --frozen-lockfile && pnpm build`, run `node scripts/evaluate-relevance.mjs` to evaluate seven graded Arabic/English queries against the eight-document synthetic corpus. The script reports Precision@5, Recall@5, MRR@5 and nDCG@5 for typo expansion on and off. This is a deterministic correctness regression fixture, not production search-quality or latency evidence.
 
 ## Known limitations
 
