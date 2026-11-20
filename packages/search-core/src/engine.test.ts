@@ -30,6 +30,19 @@ describe("SegmentSearchEngine", () => {
     expect(result.debug?.matchedPhrases).toContain("distribut system");
   });
 
+  it("preserves BM25 score components and positional phrase matching across documents", () => {
+    const request = searchRequestSchema.parse({ query: 'search "search engine"', debug: true, limit: 10 });
+    const result = engine.search(request);
+    expect(result.hits.map((hit) => hit.id)).toEqual(["a"]);
+    const hit = result.hits[0]!;
+    expect(hit.explanation?.["phrase:search engin"]).toBe(2);
+    const components = Object.values(hit.explanation ?? {}).filter((value) => typeof value === "number");
+    expect(components.length).toBeGreaterThan(1);
+    expect(hit.score).toBeCloseTo(components.reduce((sum, value) => sum + value, 0), 10);
+    expect(engine.explain("a", request)).toEqual(hit.explanation);
+    expect(engine.explain("b", request)).toEqual({});
+  });
+
   it("uses bounded typo candidates", () => {
     const result = engine.search(searchRequestSchema.parse({ query: "javscript", typoTolerance: true }));
     expect(result.hits[0]?.id).toBe("a");
