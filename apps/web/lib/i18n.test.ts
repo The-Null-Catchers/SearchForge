@@ -22,6 +22,13 @@ describe("interface localization", () => {
     expect(translate("en", "Developer logs")).toBe("Developer logs");
   });
 
+  it("localizes ranking configuration and rebuild states", () => {
+    expect(translate("ar", "Ranking configuration")).toBe("إعدادات ترتيب النتائج");
+    expect(translate("ar", "Save ranking & rebuild index")).toBe("حفظ الترتيب وإعادة بناء الفهرس");
+    expect(translate("ar", "Failed to save ranking settings")).toBe("تعذّر حفظ إعدادات الترتيب");
+    expect(translate("en", "Ranking configuration")).toBe("Ranking configuration");
+  });
+
   it("keeps English strings unchanged and safely falls back for untranslated labels", () => {
     expect(translate("en", "Search Playground")).toBe("Search Playground");
     expect(translate("ar", "A newly added label")).toBe("A newly added label");
