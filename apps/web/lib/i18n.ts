@@ -60,6 +60,15 @@ const arabic: Record<string, string> = {
   "Self-hosted search infrastructure": "بنية بحث مستضافة ذاتيًا",
   "Search response": "استجابة البحث", "Indexing pipeline": "مسار الفهرسة",
   "Crawler": "الزاحف", "Analyzer": "المحلّل", "Inverted index": "الفهرس المعكوس",
+  "Search expands project synonyms before BM25 scoring.": "يوسّع البحث مرادفات المشروع قبل حساب ترتيب BM25.",
+  "Only project editors can add synonyms.": "يمكن لمحرري المشروع فقط إضافة المرادفات.",
+  "Select a project to add synonyms.": "اختر مشروعًا لإضافة المرادفات.",
+  "Enter a name and at least two different terms separated by commas.": "أدخل اسمًا ومصطلحين مختلفين على الأقل تفصل بينهما فواصل.",
+  "Unable to save the synonym set.": "تعذّر حفظ مجموعة المرادفات.",
+  "Name": "الاسم", "Terms (comma separated)": "المصطلحات (مفصولة بفواصل)",
+  "One-way expansion (first term → remaining terms)": "توسيع باتجاه واحد (من المصطلح الأول إلى بقية المصطلحات)",
+  "Saving…": "جارٍ الحفظ…", "Save synonym set": "حفظ مجموعة المرادفات",
+  "Synonym set saved. New searches use it immediately.": "حُفظت مجموعة المرادفات. ستستخدمها عمليات البحث الجديدة فورًا.",
   "BM25 ranking": "ترتيب BM25", "REST and SDKs": "واجهة REST وحزم SDK"
 };
 
