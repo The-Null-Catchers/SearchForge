@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { api } from "../../../lib/api";
 import { useProject } from "../../../components/project-context";
+import { useLocale } from "../../../components/locale-context";
 
 type Ranking = {
   bm25: { k1: number; b: number };
@@ -22,6 +23,7 @@ const roleWeight: Record<string, number> = { viewer: 0, developer: 1, admin: 2, 
 
 export default function RankingPage() {
   const { projects, projectId } = useProject();
+  const { t } = useLocale();
   const project = useMemo(() => projects.find(item => item.id === projectId) ?? null, [projects, projectId]);
   const [ranking, setRanking] = useState<Ranking>(defaults);
   const [loading, setLoading] = useState(false);
@@ -37,7 +39,7 @@ export default function RankingPage() {
     setJobId(null);
     void api<{ ranking: Ranking }>(`/v1/projects/${projectId}/ranking`)
       .then(result => { if (active) setRanking(result.ranking); })
-      .catch(cause => { if (active) setError(cause instanceof Error ? cause.message : "Failed to load ranking settings"); })
+      .catch(cause => { if (active) setError(cause instanceof Error ? cause.message : t("Failed to load ranking settings")); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [projectId]);
@@ -62,77 +64,77 @@ export default function RankingPage() {
       setRanking(result.ranking);
       setJobId(result.jobId);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Failed to save ranking settings");
+      setError(cause instanceof Error ? cause.message : t("Failed to save ranking settings"));
     } finally {
       setSaving(false);
     }
   };
 
   return <div className="content">
-    <div className="eyebrow">Relevance</div>
-    <h1>Ranking configuration</h1>
-    <p className="muted">Tune BM25, field boosts, typo tolerance, and prefix matching. Saving creates a durable rebuild job so the new analyzer and scoring settings become active atomically.</p>
+    <div className="eyebrow">{t("Relevance")}</div>
+    <h1>{t("Ranking configuration")}</h1>
+    <p className="muted">{t("Tune BM25, field boosts, typo tolerance, and prefix matching. Saving creates a durable rebuild job so the new analyzer and scoring settings become active atomically.")}</p>
 
-    {loading && <div className="card empty" style={{ marginTop: 22 }}>Loading ranking settings…</div>}
-    {!loading && !project && <div className="card empty" style={{ marginTop: 22 }}>Select a project to configure ranking.</div>}
+    {loading && <div className="card empty" style={{ marginTop: 22 }}>{t("Loading ranking settings…")}</div>}
+    {!loading && !project && <div className="card empty" style={{ marginTop: 22 }}>{t("Select a project to configure ranking.")}</div>}
     {!loading && project && <form onSubmit={save} className="card card-body" style={{ marginTop: 22 }}>
-      <h2>BM25 scoring</h2>
+      <h2>{t("BM25 scoring")}</h2>
       <div className="grid-2" style={{ marginTop: 14 }}>
         <div className="field">
-          <label>k1 · term-frequency saturation</label>
+          <label>{t("k1 · term-frequency saturation")}</label>
           <input className="input" type="number" min="0.1" max="4" step="0.05" value={ranking.bm25.k1}
             disabled={!canEdit} onChange={event => setRanking(current => ({ ...current, bm25: { ...current.bm25, k1: Number(event.target.value) } }))} />
         </div>
         <div className="field">
-          <label>b · length normalization</label>
+          <label>{t("b · length normalization")}</label>
           <input className="input" type="number" min="0" max="1" step="0.05" value={ranking.bm25.b}
             disabled={!canEdit} onChange={event => setRanking(current => ({ ...current, bm25: { ...current.bm25, b: Number(event.target.value) } }))} />
         </div>
       </div>
 
-      <h2 style={{ marginTop: 24 }}>Field boosts</h2>
+      <h2 style={{ marginTop: 24 }}>{t("Field boosts")}</h2>
       <div className="grid-3" style={{ marginTop: 14 }}>
         {(["title", "headings", "content"] as const).map(field => <div className="field" key={field}>
-          <label>{field}</label>
+          <label>{t(field)}</label>
           <input className="input" type="number" min="0.01" max="100" step="0.25"
             value={ranking.fieldBoosts[field] ?? defaults.fieldBoosts[field]}
             disabled={!canEdit} onChange={event => setBoost(field, Number(event.target.value))} />
         </div>)}
       </div>
 
-      <h2 style={{ marginTop: 24 }}>Query expansion</h2>
+      <h2 style={{ marginTop: 24 }}>{t("Query expansion")}</h2>
       <div className="grid-2" style={{ marginTop: 14 }}>
         <label className="card card-body" style={{ cursor: canEdit ? "pointer" : "default" }}>
           <span><input type="checkbox" checked={ranking.typoTolerance.enabled} disabled={!canEdit}
-            onChange={event => setRanking(current => ({ ...current, typoTolerance: { ...current.typoTolerance, enabled: event.target.checked } }))} /> Typo tolerance</span>
-          <span className="muted" style={{ marginTop: 8 }}>Use the persisted deletion dictionary before edit-distance scoring.</span>
+            onChange={event => setRanking(current => ({ ...current, typoTolerance: { ...current.typoTolerance, enabled: event.target.checked } }))} /> {t("Typo tolerance")}</span>
+          <span className="muted" style={{ marginTop: 8 }}>{t("Use the persisted deletion dictionary before edit-distance scoring.")}</span>
         </label>
         <label className="card card-body" style={{ cursor: canEdit ? "pointer" : "default" }}>
           <span><input type="checkbox" checked={ranking.prefixSearch} disabled={!canEdit}
-            onChange={event => setRanking(current => ({ ...current, prefixSearch: event.target.checked }))} /> Prefix search</span>
-          <span className="muted" style={{ marginTop: 8 }}>Allow the final query token to expand as a prefix.</span>
+            onChange={event => setRanking(current => ({ ...current, prefixSearch: event.target.checked }))} /> {t("Prefix search")}</span>
+          <span className="muted" style={{ marginTop: 8 }}>{t("Allow the final query token to expand as a prefix.")}</span>
         </label>
       </div>
 
       <div className="grid-2" style={{ marginTop: 14 }}>
         <div className="field">
-          <label>Maximum typo distance</label>
+          <label>{t("Maximum typo distance")}</label>
           <input className="input" type="number" min="0" max="2" step="1" value={ranking.typoTolerance.maxDistance}
             disabled={!canEdit || !ranking.typoTolerance.enabled}
             onChange={event => setRanking(current => ({ ...current, typoTolerance: { ...current.typoTolerance, maxDistance: Number(event.target.value) } }))} />
         </div>
         <div className="field">
-          <label>Minimum token length</label>
+          <label>{t("Minimum token length")}</label>
           <input className="input" type="number" min="2" max="12" step="1" value={ranking.typoTolerance.minTokenLength}
             disabled={!canEdit || !ranking.typoTolerance.enabled}
             onChange={event => setRanking(current => ({ ...current, typoTolerance: { ...current.typoTolerance, minTokenLength: Number(event.target.value) } }))} />
         </div>
       </div>
 
-      {!canEdit && <p className="muted" style={{ marginTop: 16 }}>Viewer access is read-only. Developer, admin, or owner access is required to change ranking.</p>}
-      {canEdit && <button className="btn primary" disabled={saving} style={{ marginTop: 20 }}>{saving ? "Saving & rebuilding…" : "Save ranking & rebuild index"}</button>}
+      {!canEdit && <p className="muted" style={{ marginTop: 16 }}>{t("Viewer access is read-only. Developer, admin, or owner access is required to change ranking.")}</p>}
+      {canEdit && <button className="btn primary" disabled={saving} style={{ marginTop: 20 }}>{saving ? t("Saving & rebuilding…") : t("Save ranking & rebuild index")}</button>}
       {error && <div style={{ color: "var(--danger)", marginTop: 12 }}>{error}</div>}
-      {jobId && <div className="muted" style={{ marginTop: 12 }}>Ranking saved. Rebuild job: <span className="mono">{jobId}</span></div>}
+      {jobId && <div className="muted" style={{ marginTop: 12 }}>{t("Ranking saved. Rebuild job:")} <span className="mono">{jobId}</span></div>}
     </form>}
   </div>;
 }
