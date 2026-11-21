@@ -108,7 +108,6 @@ const arabic: Record<string, string> = {
   "b · length normalization": "b · تطبيع طول المستند",
   "Field boosts": "أوزان الحقول",
   "Query expansion": "توسيع الاستعلام",
-  "Typo tolerance": "تحمل الأخطاء الإملائية",
   "Prefix search": "البحث بالبادئة",
   "Use the persisted deletion dictionary before edit-distance scoring.": "استخدم قاموس الحذف المحفوظ قبل حساب مسافة التحرير.",
   "Allow the final query token to expand as a prefix.": "اسمح بتوسيع آخر مصطلح في الاستعلام بوصفه بادئة.",
