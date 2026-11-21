@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { api } from "../../../lib/api";
 import { useProject } from "../../../components/project-context";
+import { useLocale } from "../../../components/locale-context";
 
 type LogRow = {
   id: string;
@@ -19,6 +20,7 @@ type LogRow = {
 
 export default function LogsPage() {
   const { projectId } = useProject();
+  const { t, locale } = useLocale();
   const [rows, setRows] = useState<LogRow[]>([]);
   const [kind, setKind] = useState("all");
   const [level, setLevel] = useState("all");
@@ -38,7 +40,7 @@ export default function LogsPage() {
       api<{ logs: LogRow[] }>(`/v1/projects/${projectId}/logs?${params.toString()}`, { signal: controller.signal })
         .then(value => { if (!controller.signal.aborted) setRows(value.logs); })
         .catch(cause => {
-          if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Unable to load logs");
+          if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : t("Unable to load logs"));
         })
         .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     }
@@ -58,58 +60,58 @@ export default function LogsPage() {
   };
 
   return <div className="content">
-    <div className="eyebrow">Observability</div>
-    <h1>Developer logs</h1>
-    <p className="muted">Search persisted project audit events and durable job lifecycle records. Request IDs and job IDs make it easier to correlate dashboard activity with service logs.</p>
+    <div className="eyebrow">{t("Observability")}</div>
+    <h1>{t("Developer logs")}</h1>
+    <p className="muted">{t("Search persisted project audit events and durable job lifecycle records. Request IDs and job IDs make it easier to correlate dashboard activity with service logs.")}</p>
 
     <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", marginTop: 22 }}>
-      <div className="card card-body"><div className="muted">Audit events</div><h2>{counts.audit}</h2></div>
-      <div className="card card-body"><div className="muted">Job events</div><h2>{counts.jobs}</h2></div>
-      <div className="card card-body"><div className="muted">Warnings</div><h2>{counts.warnings}</h2></div>
-      <div className="card card-body"><div className="muted">Errors</div><h2>{counts.errors}</h2></div>
+      <div className="card card-body"><div className="muted">{t("Audit events")}</div><h2>{counts.audit}</h2></div>
+      <div className="card card-body"><div className="muted">{t("Job events")}</div><h2>{counts.jobs}</h2></div>
+      <div className="card card-body"><div className="muted">{t("Warnings")}</div><h2>{counts.warnings}</h2></div>
+      <div className="card card-body"><div className="muted">{t("Errors")}</div><h2>{counts.errors}</h2></div>
     </div>
 
     <form onSubmit={submit} className="card card-body" style={{ marginTop: 22 }}>
       <div className="grid" style={{ gridTemplateColumns: "minmax(240px,2fr) repeat(2,minmax(150px,1fr)) auto", alignItems: "end" }}>
         <div className="field">
-          <label htmlFor="log-search">Search</label>
-          <input id="log-search" className="input" value={query} onChange={event => setQuery(event.target.value)} placeholder="event, request ID, job type, error…" />
+          <label htmlFor="log-search">{t("Search")}</label>
+          <input id="log-search" className="input" value={query} onChange={event => setQuery(event.target.value)} placeholder={t("event, request ID, job type, error…")} />
         </div>
         <div className="field">
-          <label htmlFor="log-kind">Source</label>
+          <label htmlFor="log-kind">{t("Source")}</label>
           <select id="log-kind" className="input" value={kind} onChange={event => setKind(event.target.value)}>
-            <option value="all">All</option><option value="audit">Audit</option><option value="job">Jobs</option>
+            <option value="all">{t("All")}</option><option value="audit">{t("Audit")}</option><option value="job">{t("Jobs")}</option>
           </select>
         </div>
         <div className="field">
-          <label htmlFor="log-level">Level</label>
+          <label htmlFor="log-level">{t("Level")}</label>
           <select id="log-level" className="input" value={level} onChange={event => setLevel(event.target.value)}>
-            <option value="all">All</option><option value="info">Info</option><option value="warn">Warning</option><option value="error">Error</option>
+            <option value="all">{t("All")}</option><option value="info">{t("Info")}</option><option value="warn">{t("Warning")}</option><option value="error">{t("Error")}</option>
           </select>
         </div>
-        <button className="btn" disabled={loading}>{loading ? "Loading…" : "Search"}</button>
+        <button className="btn" disabled={loading}>{loading ? t("Loading…") : t("Search")}</button>
       </div>
     </form>
 
     {error && <div className="card card-body" style={{ marginTop: 22, color: "var(--danger)" }}>
-      <p>{error}</p><button className="btn" onClick={() => setAttempt(value => value + 1)}>Retry</button>
+      <p>{error}</p><button className="btn" onClick={() => setAttempt(value => value + 1)}>{t("Retry")}</button>
     </div>}
 
     {!error && <section className="card" style={{ marginTop: 22 }}>
-      <div className="card-head"><h2>Recent events</h2><span className="muted">Newest first · up to 100 records</span></div>
+      <div className="card-head"><h2>{t("Recent events")}</h2><span className="muted">{t("Newest first · up to 100 records")}</span></div>
       <div className="table-wrap">
         <table>
-          <thead><tr><th>Time</th><th>Level</th><th>Source</th><th>Event</th><th>Message</th><th>Correlation</th></tr></thead>
+          <thead><tr><th>{t("Time")}</th><th>{t("Level")}</th><th>{t("Source")}</th><th>{t("Event")}</th><th>{t("Message")}</th><th>{t("Correlation")}</th></tr></thead>
           <tbody>
             {rows.map(row => <tr key={row.id}>
-              <td className="mono">{new Date(row.createdAt).toLocaleString()}</td>
+              <td className="mono">{new Date(row.createdAt).toLocaleString(locale === "ar" ? "ar" : "en")}</td>
               <td><span className="mono">{row.level.toUpperCase()}</span></td>
-              <td>{row.kind === "audit" ? "Audit" : "Job"}</td>
+              <td>{row.kind === "audit" ? t("Audit") : t("Job")}</td>
               <td className="mono">{row.event}</td>
               <td>{row.message}</td>
               <td className="mono">{row.requestId ?? (typeof row.metadata.jobId === "string" ? row.metadata.jobId : row.targetId ?? "—")}</td>
             </tr>)}
-            {rows.length === 0 && <tr><td colSpan={6} className="empty">{loading ? "Loading logs…" : "No matching events."}</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={6} className="empty">{loading ? t("Loading logs…") : t("No matching events.")}</td></tr>}
           </tbody>
         </table>
       </div>
