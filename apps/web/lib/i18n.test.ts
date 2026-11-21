@@ -15,6 +15,13 @@ describe("interface localization", () => {
     expect(translate("en", "Save synonym set")).toBe("Save synonym set");
   });
 
+  it("localizes developer logs and filter states", () => {
+    expect(translate("ar", "Developer logs")).toBe("سجلات المطورين");
+    expect(translate("ar", "No matching events.")).toBe("لا توجد أحداث مطابقة.");
+    expect(translate("ar", "Retry")).toBe("إعادة المحاولة");
+    expect(translate("en", "Developer logs")).toBe("Developer logs");
+  });
+
   it("keeps English strings unchanged and safely falls back for untranslated labels", () => {
     expect(translate("en", "Search Playground")).toBe("Search Playground");
     expect(translate("ar", "A newly added label")).toBe("A newly added label");
