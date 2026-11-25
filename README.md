@@ -4,7 +4,7 @@
 
 **Who it is for:** application developers, documentation teams and engineers who need inspectable lexical search without depending on a hosted search vendor. SearchForge is a portfolio engineering system, not a claimed production-certified service.
 
-[Engineering case study](docs/CASE_STUDY.md) · [Portfolio roadmap](PORTFOLIO_ROADMAP.md) · [Demo walkthrough](docs/playground-demo.md) · [Relevance evaluation](docs/relevance-evaluation.md) · [Release evidence](docs/release-evidence.md)
+[Engineering case study](docs/CASE_STUDY.md) · [Portfolio roadmap](PORTFOLIO_ROADMAP.md) · [Demo walkthrough](docs/playground-demo.md) · [Relevance evaluation](docs/relevance-evaluation.md) · [Release evidence](docs/release-evidence.md) · [Measured CI baseline](docs/portfolio-baseline.md)
 
 
 SearchForge is a developer-focused search platform that **crawls, analyzes, indexes, ranks, and searches content**. It is deliberately not a CRUD wrapper around a hosted search vendor: the repository contains its own language analyzers, inverted index, BM25 scorer, prefix/typo candidate generation, immutable index version model, crawler safety layer, job pipeline, SDKs, and observability.
