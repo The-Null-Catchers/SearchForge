@@ -15,9 +15,11 @@ The current release smoke verifies:
 - the command palette opens, filters, and closes with keyboard interaction
 - the Analytics navigation route loads and exposes its time-window control
 - an authenticated nested dashboard route survives a full browser reload
+- project switching hides old overview metrics while a delayed real request is pending, including after a simulated network failure and successful retry
+- bilingual search, highlighting, BM25, typo expansion, synonyms, document editing, activation and rollback
 - unexpected page-level JavaScript exceptions fail the job
 
-The test stores a success screenshot and JSON result. On failure it stores a failure screenshot plus browser error details. CI uploads these artifacts for 14 days.
+The test stores screenshots of the real landing page, imported-document overview, Arabic results before explanation expansion, expanded BM25 details, typo and synonym queries, version rollback and populated analytics. Password inputs and displayed secret elements are masked. On failure it stores a masked failure screenshot plus browser error details. CI uploads these artifacts for 14 days. The result JSON includes the source SHA when supplied and browser-observed index lifecycle timings. These timings include job polling, navigation and UI verification; they are not raw index-builder throughput.
 
 ## Execution model
 
@@ -39,6 +41,7 @@ docker run --rm --network host \
   -e SEARCHFORGE_E2E_BASE_URL=http://127.0.0.1 \
   -e SEARCHFORGE_E2E_ARTIFACTS=/artifacts/browser-e2e \
   -v "$PWD/tests/browser:/tests:ro" \
+  -v "$PWD/fixtures:/fixtures:ro" \
   -v "$PWD/artifacts:/artifacts" \
   mcr.microsoft.com/playwright:v1.55.0-noble \
   bash -lc 'npm install --global --silent playwright@1.55.0 && NODE_PATH=$(npm root -g) node /tests/e2e.cjs'

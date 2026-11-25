@@ -16,14 +16,8 @@ type Overview = {
 
 export default function OverviewPage() {
   const { projectId, projects, refresh, loading } = useProject();
-  const [overview, setOverview] = useState<Overview | null>(null);
   const [error, setError] = useState("");
-  const [createdSecrets, setCreatedSecrets] = useState<{ searchKey:string; adminKey:string } | null>(null);
-
-  useEffect(() => {
-    if (!projectId) { setOverview(null); return; }
-    api<Overview>(`/v1/projects/${projectId}/overview`).then(setOverview).catch((err) => setError(err.message));
-  }, [projectId]);
+  const [createdSecrets, setCreatedSecrets] = useState<{ projectId: string; searchKey: string; adminKey: string } | null>(null);
 
   const createWorkspace = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -40,7 +34,7 @@ export default function OverviewPage() {
       });
       localStorage.setItem("sf_project_id", project.id);
       sessionStorage.setItem(`sf_search_key:${project.id}`, project.searchKey);
-      setCreatedSecrets({searchKey:project.searchKey,adminKey:project.adminKey});
+      setCreatedSecrets({ projectId: project.id, searchKey: project.searchKey, adminKey: project.adminKey });
       await refresh();
     } catch (err) { setError(err instanceof Error ? err.message : "Failed to create workspace"); }
   };
@@ -54,25 +48,52 @@ export default function OverviewPage() {
         <p className="muted">Create an organization and your first project. SearchForge will create a default <span className="mono">docs</span> index and one-time API secrets.</p>
         <form className="card card-body stack" onSubmit={createWorkspace} style={{maxWidth:760,marginTop:22}}>
           <div className="form-row">
-            <div className="field"><label>Organization</label><input className="input" name="organizationName" required /></div>
-            <div className="field"><label>Organization slug</label><input className="input mono" name="organizationSlug" pattern="[a-z0-9][a-z0-9-]{1,78}[a-z0-9]" required /></div>
+            <div className="field"><label htmlFor="organizationName">Organization</label><input id="organizationName" className="input" name="organizationName" required /></div>
+            <div className="field"><label htmlFor="organizationSlug">Organization slug</label><input id="organizationSlug" className="input mono" name="organizationSlug" pattern="[a-z0-9][a-z0-9-]{1,78}[a-z0-9]" required /></div>
           </div>
           <div className="form-row">
-            <div className="field"><label>Project</label><input className="input" name="projectName" required /></div>
-            <div className="field"><label>Project slug</label><input className="input mono" name="projectSlug" pattern="[a-z0-9][a-z0-9-]{1,78}[a-z0-9]" required /></div>
+            <div className="field"><label htmlFor="projectName">Project</label><input id="projectName" className="input" name="projectName" required /></div>
+            <div className="field"><label htmlFor="projectSlug">Project slug</label><input id="projectSlug" className="input mono" name="projectSlug" pattern="[a-z0-9][a-z0-9-]{1,78}[a-z0-9]" required /></div>
           </div>
-          {error && <div style={{color:"var(--danger)"}}>{error}</div>}
+          {error && <div role="alert" style={{color:"var(--danger)"}}>{error}</div>}
           <button className="btn primary">Create workspace</button>
         </form>
       </div>
     );
   }
 
+  if (!projectId) return <div className="content"><div className="card empty" role="status">Select a project to view its overview.</div></div>;
+
+  // Remount project-owned state immediately when the selected tenant changes.
+  return <ProjectOverview key={projectId} projectId={projectId}
+    createdSecrets={createdSecrets?.projectId === projectId ? createdSecrets : null} />;
+}
+
+function ProjectOverview({ projectId, createdSecrets }: {
+  projectId: string;
+  createdSecrets: { searchKey: string; adminKey: string } | null;
+}) {
+  const [overview, setOverview] = useState<Overview | null>(null);
+  const [error, setError] = useState("");
+  const [attempt, setAttempt] = useState(0);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setOverview(null);
+    setError("");
+    api<Overview>(`/v1/projects/${projectId}/overview`, { signal: controller.signal })
+      .then(value => { if (!controller.signal.aborted) setOverview(value); })
+      .catch(err => { if (!controller.signal.aborted) setError(err instanceof Error ? err.message : "Unable to load project overview"); });
+    return () => controller.abort();
+  }, [projectId, attempt]);
+
   return (
     <div className="content">
       <div className="eyebrow">Control plane</div><h1>Search overview</h1><p className="muted">Live metadata from the selected project. Search metrics begin populating as API traffic arrives.</p>
       {createdSecrets && <div className="card card-body stack" style={{marginTop:18}}><h2>Copy these secrets now</h2><div className="muted">SearchForge stores only digests and cannot show the full values again.</div><div className="secret mono">{createdSecrets.searchKey}</div><div className="secret mono">{createdSecrets.adminKey}</div></div>}
-      {error && <div className="card card-body" style={{color:"var(--danger)",marginTop:16}}>{error}</div>}
+      {error && <div className="card card-body" role="alert" style={{color:"var(--danger)",marginTop:16}}><p>{error}</p><button className="btn" onClick={() => { setError(""); setAttempt(value => value + 1); }}>Retry</button></div>}
+      {!overview && !error && <div className="card empty" role="status">Loading project overview…</div>}
+      {overview && <>
       <div className="grid metrics">
         {[
           ["Indexed documents", overview?.documents ?? "—"],
@@ -87,8 +108,10 @@ export default function OverviewPage() {
         <div className="card-head"><h2>Active index versions</h2><span className="badge">atomic activation</span></div>
         <div className="table-wrap"><table><thead><tr><th>Index</th><th>Version</th><th>Documents</th><th>Size</th></tr></thead><tbody>
           {(overview?.indexes ?? []).map((index) => <tr key={index.indexId}><td>{index.indexName}</td><td className="mono">{index.version ?? "not built"}</td><td>{index.documentCount ?? 0}</td><td>{index.indexedBytes ? `${(index.indexedBytes/1024).toFixed(1)} KB` : "—"}</td></tr>)}
+          {overview.indexes.length === 0 && <tr><td colSpan={4} className="empty">No indexes in this project.</td></tr>}
         </tbody></table></div>
       </section>
+      </>}
     </div>
   );
 }

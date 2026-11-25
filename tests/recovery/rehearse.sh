@@ -115,6 +115,7 @@ writeFileSync(`${out}/summary.json`, JSON.stringify({
   generatedAt: new Date().toISOString(),
   documentCount: browser.playground.indexedDocuments,
   indexVersion: browser.playground.rollback.activeVersion,
+  indexLifecycleMs: browser.playground.indexLifecycleMs,
   measuredRequests: load.configuration.requests,
   concurrency: load.configuration.concurrency,
   warmupRequests: load.configuration.warmupRequests,
