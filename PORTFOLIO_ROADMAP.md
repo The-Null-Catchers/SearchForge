@@ -42,6 +42,13 @@ The repository already implements TypeScript lexical retrieval with Arabic/Engli
 - [PR #80](https://github.com/The-Null-Catchers/SearchForge/pull/80) merged as `9cf35fb17983f429f1c2bab4fd8e9bd11245e081` (query-scoped postings lookups and explain correctness). All four CI jobs passed on its PR head `9734afe6e75ede3134858dafeb3f2b0f8b7c426e`.
 - Passing CI demonstrates functional regression coverage, **not** a quantified speedup or target VPS readiness. CI artifacts are ephemeral; preserve final-run artifacts before they expire.
 
+## November 25 engineering pass
+
+- Baseline main `00cf674fff8f8456b9f2f962e793c49951d44d85`: all four CI jobs passed; actual eight-document disposable search and restore measurements are preserved in [portfolio baseline](docs/portfolio-baseline.md).
+- Project overview: separate project-keyed loading/error/data state, cancellation, retry and a browser regression for switching during an outstanding request. New branch CI must pass before marking this complete.
+- Browser evidence: distinct Arabic and BM25 captures, populated overview and analytics, masked secrets, and measured import/edit/rollback lifecycle durations. Final captures and CI evidence remain pending verification.
+- Existing Arabic Usage localization draft [#85](https://github.com/The-Null-Catchers/SearchForge/pull/85) remains separate and unmerged.
+
 ## Outstanding release evidence
 
 The existing CI runs a disposable load/recovery rehearsal and uploads artifacts. The target VPS has not been authorized or measured in this portfolio pass. A real target backup and isolated restore are still required before publishing deployment-specific claims. Screenshot files must come from a running application, not design mockups.

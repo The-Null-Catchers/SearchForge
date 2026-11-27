@@ -42,6 +42,135 @@ async function verifyAccountSecurityRoutes(page) {
 }
 
 
+async function capture(page, name) {
+  await page.screenshot({
+    path: path.join(artifactsDir, name),
+    fullPage: true,
+    mask: [page.locator('input[type="password"], .secret')]
+  });
+}
+
+async function verifyOverviewIsolation(page, docs, labs, documentCount) {
+  await page.getByRole("link", { name: "Overview", exact: true }).click();
+  const selector = page.locator("select.project-select");
+  const metric = page.locator(".metric").filter({ hasText: "Indexed documents" });
+  const expectCount = count => metric.getByText(String(count), { exact: true }).waitFor({ timeout: 15_000 });
+
+  await selector.selectOption(docs.id);
+  await expectCount(documentCount);
+  // Hold a real project request to prove old tenant metrics disappear during loading.
+  const labsRoute = `**/v1/projects/${labs.id}/overview`;
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const hold = async route => {
+    await gate;
+    // Switching away can cancel this request before it is released.
+    await route.continue().catch(() => undefined);
+  };
+  await page.route(labsRoute, hold, { times: 1 });
+  try {
+    const started = page.waitForRequest(request => request.url().endsWith(`/v1/projects/${labs.id}/overview`));
+    await selector.selectOption(labs.id);
+    await started;
+    await page.getByText("Loading project overview…", { exact: true }).waitFor();
+    assert(await metric.count() === 0, "Previous project metrics remained visible while the new project loaded");
+    await selector.selectOption(docs.id);
+    await expectCount(documentCount);
+  } finally {
+    release();
+    await page.unroute(labsRoute, hold);
+  }
+
+  // The next request uses the real second tenant. Simulate one transport failure
+  // to verify the error state and a successful retry without stale data.
+  await page.route(labsRoute, route => route.abort(), { times: 1 });
+  await selector.selectOption(labs.id);
+  const error = page.getByRole("alert").filter({ has: page.getByRole("button", { name: "Retry", exact: true }) });
+  await error.waitFor({ timeout: 15_000 });
+  assert(await metric.count() === 0, "Previous project metrics remained visible after a failed request");
+  await error.getByRole("button", { name: "Retry", exact: true }).click();
+  await expectCount(0);
+  await selector.selectOption(docs.id);
+  await expectCount(documentCount);
+  await capture(page, "dashboard-overview.png");
+}
+
+async function verifyUsageIsolation(page, docs, labs, documentCount) {
+  await page.getByRole("link", { name: "Usage", exact: true }).click();
+  const selector = page.locator("select.project-select");
+  const docsPath = `/v1/projects/${docs.id}/quotas`;
+  const labsPath = `/v1/projects/${labs.id}/quotas`;
+  const documentMetric = page.getByTestId("quota-metric-documents").locator("h2");
+
+  await selector.selectOption(docs.id);
+  await documentMetric.getByText(String(documentCount), { exact: true }).waitFor({ timeout: 15_000 });
+  assert(await page.getByRole("button", { name: "Save quota policy", exact: true }).isVisible(),
+    "The docs owner should be able to edit quota policy");
+
+  // Hold the labs response, switch back to docs, then release it. A late
+  // response from the previous project must never replace the selected tenant.
+  let releaseDelayed;
+  let finishDelayed;
+  const gate = new Promise(resolve => { releaseDelayed = resolve; });
+  const delayedFinished = new Promise(resolve => { finishDelayed = resolve; });
+  const delayedHandler = async route => {
+    await gate;
+    try { await route.continue(); } catch { /* The selected-project change may abort it. */ }
+    finally { finishDelayed(); }
+  };
+  await page.route(`**${labsPath}`, delayedHandler, { times: 1 });
+  const delayedRequest = await (async () => {
+    const pending = page.waitForRequest(request => request.url().endsWith(labsPath));
+    await selector.selectOption(labs.id);
+    return pending;
+  })();
+
+  const requestSettled = new Promise(resolve => {
+    const cleanup = state => {
+      page.off("requestfinished", onFinished);
+      page.off("requestfailed", onFailed);
+      resolve(state);
+    };
+    const onFinished = request => { if (request === delayedRequest) cleanup("finished"); };
+    const onFailed = request => { if (request === delayedRequest) cleanup("failed"); };
+    page.on("requestfinished", onFinished);
+    page.on("requestfailed", onFailed);
+  });
+
+  await page.getByText("Loading usage…", { exact: true }).waitFor();
+  assert(await page.getByTestId("quota-metric-documents").count() === 0,
+    "Previous-project quota metrics remained visible during loading");
+
+  const docsResponse = page.waitForResponse(response =>
+    response.url().endsWith(docsPath) && response.request().method() === "GET");
+  await selector.selectOption(docs.id);
+  const response = await docsResponse;
+  assert(response.ok(), `Docs quota request returned HTTP ${response.status()}`);
+  await documentMetric.getByText(String(documentCount), { exact: true }).waitFor({ timeout: 15_000 });
+
+  releaseDelayed();
+  await delayedFinished;
+  await requestSettled;
+  await page.waitForTimeout(100);
+  await documentMetric.getByText(String(documentCount), { exact: true }).waitFor({ timeout: 3_000 });
+
+  await selector.selectOption(labs.id);
+  await page.getByTestId("quota-metric-documents").locator("h2").getByText("0", { exact: true }).waitFor({ timeout: 15_000 });
+  assert(await page.getByRole("button", { name: "Save quota policy", exact: true }).count() === 0,
+    "The viewer role unexpectedly received quota editing controls");
+
+  await selector.selectOption(docs.id);
+  await documentMetric.getByText(String(documentCount), { exact: true }).waitFor({ timeout: 15_000 });
+  await page.getByRole("button", { name: "Switch language", exact: true }).click();
+  await page.getByRole("heading", { name: "الاستخدام", exact: true }).waitFor();
+  await page.getByRole("heading", { name: "سياسة حدود الاستخدام", exact: true }).waitFor();
+  const arabicEight = await page.evaluate(() => new Intl.NumberFormat("ar").format(8));
+  await page.getByTestId("quota-metric-documents").getByText(arabicEight, { exact: true }).waitFor();
+  await page.getByLabel("عمليات البحث الشهرية", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "تغيير اللغة", exact: true }).click();
+  await page.getByRole("heading", { name: "Usage", exact: true }).waitFor();
+}
+
 async function verifySearchPlayground(page) {
   async function request(method, route, token, data) {
     const response = await page.request.fetch(`${baseUrl}${route}`, {
@@ -62,6 +191,7 @@ async function verifySearchPlayground(page) {
   const { key: indexingKey } = await request("POST", keysRoute, accessToken, { name: "Browser fixture import", kind: "indexing" });
   const { key: searchKey } = await request("POST", keysRoute, accessToken, { name: "Browser playground", kind: "search" });
   const documents = JSON.parse(fs.readFileSync(path.join(__dirname, "../fixtures/demo-documents.json"), "utf8"));
+  const importStarted = performance.now();
   const batch = await request("POST", "/v1/indexes/docs/documents/batch", indexingKey, { documents });
   let state;
   const deadline = Date.now() + 60_000;
@@ -72,6 +202,9 @@ async function verifySearchPlayground(page) {
     await delay(500);
   }
   assert(state === "completed", `Portfolio indexing job ended in state ${state}`);
+  const importToJobCompletedMs = Math.round(performance.now() - importStarted);
+  await verifyOverviewIsolation(page, docs, labs, documents.length);
+  await verifyUsageIsolation(page, docs, labs, documents.length);
 
   await page.getByRole("link", { name: "Search Playground", exact: true }).click();
   await page.getByRole("heading", { name: "Search Playground", exact: true }).waitFor();
@@ -100,12 +233,14 @@ async function verifySearchPlayground(page) {
   await page.getByLabel("Category filter").fill("docs");
   const arabic = await search();
   const arabicHit = results.getByRole("article").filter({ has: page.getByRole("heading", { name: "محرك بحث عربي", exact: true }) });
-  await arabicHit.getByText(/BM25 score breakdown/).click();
   assert(arabic.hits.some(hit => hit.id === "search-ar") && arabic.hits.every(hit => hit.document.metadata?.category === "docs"), "Arabic category filter returned unexpected documents");
-  assert(await arabicHit.locator("dl dt").count() > 0, "Arabic result is missing BM25 components");
+  await arabicHit.waitFor();
   assert(await arabicHit.locator("mark.match-highlight").count() > 0, "Arabic result did not highlight matching terms");
-  await page.screenshot({ path: path.join(artifactsDir, "playground-arabic.png"), fullPage: true });
-  await page.screenshot({ path: path.join(artifactsDir, "playground-bm25.png"), fullPage: true });
+  assert(!(await arabicHit.locator("details").evaluate(details => details.open)), "BM25 explanation should start collapsed");
+  await capture(page, "playground-arabic.png");
+  await arabicHit.getByText(/BM25 score breakdown/).click();
+  assert(await arabicHit.locator("dl dt").first().isVisible(), "Arabic result is missing visible BM25 components");
+  await capture(page, "playground-bm25.png");
 
   await page.getByRole("button", { name: "English typo", exact: true }).click();
   await page.getByLabel("Typo tolerance").uncheck();
@@ -117,7 +252,7 @@ async function verifySearchPlayground(page) {
   await typoHit.getByText(/BM25 score breakdown/).click();
   assert(typo.hits[0]?.id === "search-en", "Typo-tolerant query did not rank the expected document first");
   assert(typo.debug?.expandedTerms?.javscript?.includes("javascript"), "Typo expansion did not include javascript");
-  await page.screenshot({ path: path.join(artifactsDir, "playground-typo.png"), fullPage: true });
+  await capture(page, "playground-typo.png");
 
   const alias = "ecmascript";
   const replacementTitle = "JavaScript search engine release candidate";
@@ -149,7 +284,7 @@ async function verifySearchPlayground(page) {
   const expanded = await searchForAlias();
   assert(expanded.hits[0]?.id === "search-en" && expanded.indexVersion === beforeSynonym.indexVersion, "The new synonym did not expand search on the current index");
   await results.getByText(/Expanded ecmascript.*javascript/).waitFor();
-  await page.screenshot({ path: path.join(artifactsDir, "playground-synonym.png"), fullPage: true });
+  await capture(page, "playground-synonym.png");
 
   await page.getByRole("link", { name: "Indexes", exact: true }).click();
   const source = page.getByRole("row").filter({ hasText: "search-en" });
@@ -157,6 +292,7 @@ async function verifySearchPlayground(page) {
   const editor = page.getByLabel("Editable document JSON");
   const original = JSON.parse(await editor.inputValue());
   await editor.fill(JSON.stringify({ ...original, title: replacementTitle }));
+  const editStarted = performance.now();
   await page.getByRole("button", { name: "Save fields", exact: true }).click();
   const oldVersion = page.getByRole("row").filter({
     has: page.getByRole("cell", { name: `v${expanded.indexVersion}`, exact: true })
@@ -168,24 +304,33 @@ async function verifySearchPlayground(page) {
   assert(Number(rebuilt.indexVersion) > Number(expanded.indexVersion), "An updated immutable version did not become active");
   assert(rebuilt.hits[0]?.id === "search-en" && rebuilt.hits[0].document.title === replacementTitle, "Search did not return the updated indexed document");
   await results.getByRole("heading", { name: replacementTitle, exact: true }).waitFor();
+  const editToSearchVisibleMs = Math.round(performance.now() - editStarted);
 
   await page.getByRole("link", { name: "Indexes", exact: true }).click();
   page.once("dialog", dialog => dialog.accept());
+  const rollbackStarted = performance.now();
   await oldVersion.getByRole("button", { name: "Activate", exact: true }).click();
   await oldVersion.getByRole("cell", { name: "active", exact: true }).waitFor();
-  await page.screenshot({ path: path.join(artifactsDir, "index-version-rollback.png"), fullPage: true });
+  await capture(page, "index-version-rollback.png");
 
   await openPlayground();
   const rolledBack = await searchForAlias();
   assert(rolledBack.indexVersion === expanded.indexVersion, "Search did not resume serving the original version");
   assert(rolledBack.hits[0]?.id === "search-en" && rolledBack.hits[0].document.title === original.title, "Rollback did not restore the original search result");
   await results.getByRole("heading", { name: original.title, exact: true }).waitFor();
-  await page.screenshot({ path: path.join(artifactsDir, "playground-rollback.png"), fullPage: true });
+  const rollbackToSearchVisibleMs = Math.round(performance.now() - rollbackStarted);
+  await capture(page, "playground-rollback.png");
 
   await projectSelector.selectOption(labs.id);
   await results.getByText("Run a query to see matching documents.").waitFor();
   assert(await keyInput.inputValue() === "", "The previous project's API key remained in the form");
+  await projectSelector.selectOption(docs.id);
+  await page.getByRole("link", { name: "Analytics", exact: true }).click();
+  await page.getByRole("cell", { name: "search api", exact: true }).waitFor({ timeout: 15_000 });
+  await capture(page, "dashboard-analytics.png");
   return { indexedDocuments: documents.length, indexVersion: arabic.indexVersion, arabicHits: arabic.hits.map(hit => hit.id), typoTopHit: typo.hits[0].id,
+    overviewIsolation: true,
+    indexLifecycleMs: { importToJobCompletedMs, editToSearchVisibleMs, rollbackToSearchVisibleMs },
     synonym: { alias, beforeHits: beforeSynonym.total, afterTopHit: expanded.hits[0].id },
     rollback: { originalVersion: expanded.indexVersion, rebuiltVersion: rebuilt.indexVersion, activeVersion: rolledBack.indexVersion, restoredTitle: rolledBack.hits[0].document.title }
   };
@@ -204,7 +349,7 @@ async function main() {
 
     await page.goto(`${baseUrl}/`, { waitUntil: "networkidle", timeout: 30_000 });
     await page.getByRole("heading", { name: "Search infrastructure, built for your product", exact: true }).waitFor({ timeout: 10_000 });
-    await page.screenshot({ path: path.join(artifactsDir, "landing-page.png"), fullPage: true });
+    await capture(page, "landing-page.png");
     await page.goto(`${baseUrl}/login`, { waitUntil: "networkidle", timeout: 30_000 });
     assert((await page.locator("h1").textContent())?.trim() === "Sign in", "Login heading did not render");
     const loginBrand = page.locator(".login-card .brand");
@@ -221,8 +366,7 @@ async function main() {
     await page.getByRole("heading", { name: "Search overview", exact: true }).waitFor({ timeout: 30_000 });
     const projectOptions = await page.locator("select.project-select option").count();
     assert(projectOptions >= 2, `Expected seeded tenant projects, found ${projectOptions}`);
-    assert(await page.getByText("Indexed documents", { exact: true }).isVisible(), "Overview metrics did not render");
-    await page.screenshot({ path: path.join(artifactsDir, "dashboard-overview.png"), fullPage: true });
+    await page.getByText("Indexed documents", { exact: true }).waitFor({ timeout: 15_000 });
     await page.getByRole("button", { name: "Switch language" }).click();
     await page.waitForFunction(() => document.documentElement.dir === "rtl");
     assert(await page.getByRole("link", { name: "مختبر البحث", exact: true }).isVisible(), "Arabic navigation did not render");
@@ -251,19 +395,19 @@ async function main() {
     await page.getByRole("heading", { name: "Analytics", exact: true }).waitFor({ timeout: 15_000 });
     assert(page.url().endsWith("/dashboard/analytics"), "Authenticated dashboard route did not survive reload");
 
-    await page.screenshot({ path: path.join(artifactsDir, "dashboard-analytics.png"), fullPage: true });
     const analyticsUrl = page.url();
     const playground = await verifySearchPlayground(page);
     if (pageErrors.length > 0) throw new Error(`Browser page errors: ${pageErrors.join(" | ")}`);
     fs.writeFileSync(path.join(artifactsDir, "result.json"), JSON.stringify({
       status: "passed",
+      gitSha: process.env.GITHUB_SHA || null,
       url: analyticsUrl,
       projectOptions,
       playground,
       accountSecurityRoutes: ["forgot-password", "reset-password", "verify-email"]
     }, null, 2));
   } catch (error) {
-    await page.screenshot({ path: path.join(artifactsDir, "failure.png"), fullPage: true }).catch(() => undefined);
+    await capture(page, "failure.png").catch(() => undefined);
     fs.writeFileSync(path.join(artifactsDir, "result.json"), JSON.stringify({ status: "failed", error: error instanceof Error ? error.message : String(error), url: page.url(), pageErrors }, null, 2));
     throw error;
   } finally {
