@@ -29,6 +29,17 @@ describe("interface localization", () => {
     expect(translate("en", "Ranking configuration")).toBe("Ranking configuration");
   });
 
+  it("localizes quota management and threshold statuses", () => {
+    expect(translate("ar", "Quota notifications")).toBe("إشعارات حدود الاستخدام");
+    expect(translate("ar", "Monthly API requests")).toBe("طلبات API الشهرية");
+    expect(translate("ar", "exceeded")).toBe("تم تجاوز الحد");
+    expect(translate("ar", "Select a project to view usage.")).toBe("اختر مشروعًا لعرض الاستخدام.");
+    expect(translate("en", "Save quota policy")).toBe("Save quota policy");
+    expect(translate("ar", "Usage")).toBe("الاستخدام");
+    expect(translate("ar", "Maximum documents")).toBe("الحد الأقصى للمستندات");
+    expect(translate("ar", "Loading usage…")).toBe("جارٍ تحميل بيانات الاستخدام…");
+  });
+
   it("keeps English strings unchanged and safely falls back for untranslated labels", () => {
     expect(translate("en", "Search Playground")).toBe("Search Playground");
     expect(translate("ar", "A newly added label")).toBe("A newly added label");

@@ -95,6 +95,82 @@ async function verifyOverviewIsolation(page, docs, labs, documentCount) {
   await capture(page, "dashboard-overview.png");
 }
 
+async function verifyUsageIsolation(page, docs, labs, documentCount) {
+  await page.getByRole("link", { name: "Usage", exact: true }).click();
+  const selector = page.locator("select.project-select");
+  const docsPath = `/v1/projects/${docs.id}/quotas`;
+  const labsPath = `/v1/projects/${labs.id}/quotas`;
+  const documentMetric = page.getByTestId("quota-metric-documents").locator("h2");
+
+  await selector.selectOption(docs.id);
+  await documentMetric.getByText(String(documentCount), { exact: true }).waitFor({ timeout: 15_000 });
+  assert(await page.getByRole("button", { name: "Save quota policy", exact: true }).isVisible(),
+    "The docs owner should be able to edit quota policy");
+
+  // Hold the labs response, switch back to docs, then release it. A late
+  // response from the previous project must never replace the selected tenant.
+  let releaseDelayed;
+  let finishDelayed;
+  const gate = new Promise(resolve => { releaseDelayed = resolve; });
+  const delayedFinished = new Promise(resolve => { finishDelayed = resolve; });
+  const delayedHandler = async route => {
+    await gate;
+    try { await route.continue(); } catch { /* The selected-project change may abort it. */ }
+    finally { finishDelayed(); }
+  };
+  await page.route(`**${labsPath}`, delayedHandler, { times: 1 });
+  const delayedRequest = await (async () => {
+    const pending = page.waitForRequest(request => request.url().endsWith(labsPath));
+    await selector.selectOption(labs.id);
+    return pending;
+  })();
+
+  const requestSettled = new Promise(resolve => {
+    const cleanup = state => {
+      page.off("requestfinished", onFinished);
+      page.off("requestfailed", onFailed);
+      resolve(state);
+    };
+    const onFinished = request => { if (request === delayedRequest) cleanup("finished"); };
+    const onFailed = request => { if (request === delayedRequest) cleanup("failed"); };
+    page.on("requestfinished", onFinished);
+    page.on("requestfailed", onFailed);
+  });
+
+  await page.getByText("Loading usage…", { exact: true }).waitFor();
+  assert(await page.getByTestId("quota-metric-documents").count() === 0,
+    "Previous-project quota metrics remained visible during loading");
+
+  const docsResponse = page.waitForResponse(response =>
+    response.url().endsWith(docsPath) && response.request().method() === "GET");
+  await selector.selectOption(docs.id);
+  const response = await docsResponse;
+  assert(response.ok(), `Docs quota request returned HTTP ${response.status()}`);
+  await documentMetric.getByText(String(documentCount), { exact: true }).waitFor({ timeout: 15_000 });
+
+  releaseDelayed();
+  await delayedFinished;
+  await requestSettled;
+  await page.waitForTimeout(100);
+  await documentMetric.getByText(String(documentCount), { exact: true }).waitFor({ timeout: 3_000 });
+
+  await selector.selectOption(labs.id);
+  await page.getByTestId("quota-metric-documents").locator("h2").getByText("0", { exact: true }).waitFor({ timeout: 15_000 });
+  assert(await page.getByRole("button", { name: "Save quota policy", exact: true }).count() === 0,
+    "The viewer role unexpectedly received quota editing controls");
+
+  await selector.selectOption(docs.id);
+  await documentMetric.getByText(String(documentCount), { exact: true }).waitFor({ timeout: 15_000 });
+  await page.getByRole("button", { name: "Switch language", exact: true }).click();
+  await page.getByRole("heading", { name: "الاستخدام", exact: true }).waitFor();
+  await page.getByRole("heading", { name: "سياسة حدود الاستخدام", exact: true }).waitFor();
+  const arabicEight = await page.evaluate(() => new Intl.NumberFormat("ar").format(8));
+  await page.getByTestId("quota-metric-documents").getByText(arabicEight, { exact: true }).waitFor();
+  await page.getByLabel("عمليات البحث الشهرية", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "تغيير اللغة", exact: true }).click();
+  await page.getByRole("heading", { name: "Usage", exact: true }).waitFor();
+}
+
 async function verifySearchPlayground(page) {
   async function request(method, route, token, data) {
     const response = await page.request.fetch(`${baseUrl}${route}`, {
@@ -128,6 +204,7 @@ async function verifySearchPlayground(page) {
   assert(state === "completed", `Portfolio indexing job ended in state ${state}`);
   const importToJobCompletedMs = Math.round(performance.now() - importStarted);
   await verifyOverviewIsolation(page, docs, labs, documents.length);
+  await verifyUsageIsolation(page, docs, labs, documents.length);
 
   await page.getByRole("link", { name: "Search Playground", exact: true }).click();
   await page.getByRole("heading", { name: "Search Playground", exact: true }).waitFor();
