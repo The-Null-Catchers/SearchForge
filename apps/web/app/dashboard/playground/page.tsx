@@ -15,7 +15,7 @@ const examples = [
   { label: "Mixed-language search", query: "محرك search", category: "" },
   { label: "English typo", query: "javscript", category: "" }
 ];
-const languages: Record<string, string> = { ar: "Arabic", en: "English", mixed: "Mixed" };
+const languages = new Map([["ar", "Arabic"], ["en", "English"], ["mixed", "Mixed"]]);
 
 function highlight(value: string, ranges: HighlightRange[], field: string): ReactNode {
   const matches = ranges.filter(range => range.field === field && range.start >= 0 && range.end <= value.length && range.end > range.start)
@@ -189,7 +189,7 @@ function Playground({ projectId }: { projectId: string | null }) {
       <div className="field">
         <label htmlFor="playground-language">{t("Language")}</label>
         <select id="playground-language" className="input" value={language} onChange={event => setLanguage(event.target.value)}>
-          <option value="">{t("Any language")}</option>{Object.entries(languages).map(([value, label]) => <option key={value} value={value}>{t(label)}</option>)}
+          <option value="">{t("Any language")}</option>{[...languages].map(([value, label]) => <option key={value} value={value}>{t(label)}</option>)}
         </select>
       </div>
       <div className="field">
@@ -219,7 +219,7 @@ function Playground({ projectId }: { projectId: string | null }) {
             <span className="muted">{t(label)}</span>
             <div className="facet-list">
               {Object.entries(result.facets[field] ?? {}).map(([name, count]) => <button className={selected === name ? "facet-chip active" : "facet-chip"} key={name} type="button" aria-pressed={selected === name}
-                onClick={() => { const value = selected === name ? "" : name; select(value); void runSearch({ [parameter]: value }); }}><bdi>{field === "language" ? t(languages[name] ?? name) : name}</bdi><span>{number.format(count)}</span></button>)}
+                onClick={() => { const value = selected === name ? "" : name; select(value); void runSearch({ [parameter]: value }); }}><bdi>{field === "language" ? t(languages.get(name) ?? name) : name}</bdi><span>{number.format(count)}</span></button>)}
             </div>
           </div>)}
           {Object.entries(result.debug?.expandedTerms ?? {}).filter(([, terms]) => terms.length > 1).map(([term, terms]) =>
@@ -237,7 +237,7 @@ function Playground({ projectId }: { projectId: string | null }) {
               {highlight(hit.document.content.slice(0, 360), hit.highlights.filter(range => range.start < 360), "content")}
             </p>}
             <div className="result-meta">
-              {typeof hit.document.language === "string" && <span className="badge">{t(languages[hit.document.language] ?? hit.document.language)}</span>}
+              {typeof hit.document.language === "string" && <span className="badge">{t(languages.get(hit.document.language) ?? hit.document.language)}</span>}
               {typeof hit.document.metadata?.category === "string" && <span className="badge"><bdi>{hit.document.metadata.category}</bdi></span>}
             </div>
             {hit.explanation && <details className="result-explanation">

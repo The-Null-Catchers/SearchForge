@@ -53,7 +53,12 @@ async function capture(page, name) {
     maskColor: "#182234",
     animations: "disabled"
   });
-  if (videoDir && recordingShots.has(name)) await delay(7000);
+  if (videoDir && recordingShots.has(name)) {
+    const started = performance.now();
+    await delay(7000);
+    return performance.now() - started;
+  }
+  return 0;
 }
 
 async function verifyOverviewIsolation(page, docs, labs, documentCount) {
@@ -256,6 +261,10 @@ async function verifySearchPlayground(page) {
   await page.getByLabel("Category filter").clear();
   const unfiltered = await search();
   assert(unfiltered.hits.some(hit => hit.document.metadata?.category === "guides"), "Arabic query did not match a guide before filtering");
+  const guides = results.getByRole("button").filter({ has: page.getByText("guides", { exact: true }) });
+  await guides.click();
+  await results.getByRole("button", { pressed: true }).filter({ has: page.getByText("guides", { exact: true }) }).waitFor();
+  assert(await page.getByLabel("Category filter").inputValue() === "guides", "Category facet did not select its filter");
 
   await page.getByLabel("Category filter").fill("docs");
   const arabic = await search();
@@ -343,14 +352,14 @@ async function verifySearchPlayground(page) {
   const rollbackStarted = performance.now();
   await oldVersion.getByRole("button", { name: "Activate", exact: true }).click();
   await oldVersion.getByRole("cell", { name: "active", exact: true }).waitFor();
-  await capture(page, "index-version-rollback.png");
+  const recordingPauseMs = await capture(page, "index-version-rollback.png");
 
   await openPlayground();
   const rolledBack = await searchForAlias();
   assert(rolledBack.indexVersion === expanded.indexVersion, "Search did not resume serving the original version");
   assert(rolledBack.hits[0]?.id === "search-en" && rolledBack.hits[0].document.title === original.title, "Rollback did not restore the original search result");
   await results.getByRole("heading", { name: original.title, exact: true }).waitFor();
-  const rollbackToSearchVisibleMs = Math.round(performance.now() - rollbackStarted);
+  const rollbackToSearchVisibleMs = Math.round(performance.now() - rollbackStarted - recordingPauseMs);
   await capture(page, "playground-rollback.png");
 
   await projectSelector.selectOption(labs.id);

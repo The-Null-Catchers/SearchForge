@@ -42,7 +42,7 @@ function ProjectIndexes({ projectId }: { projectId: string | null }) {
       {canDelete && <button className="btn" disabled={!ex.indexId || ex.busy} onClick={() => {
         const selected = ex.indexes.find(index => index.id === ex.indexId);
         if (!selected) return;
-        const confirmation = window.prompt(`Permanently delete ${selected.name}, all documents and every index version? Search stops immediately. Type ${selected.slug} to confirm.`);
+        const confirmation = window.prompt(t("Permanently delete this index and its documents and versions? Search stops immediately. Type {slug} to confirm.").replace("{slug}", `\u2066${selected.slug}\u2069`));
         if (confirmation === selected.slug) void ex.deleteIndex(confirmation);
       }}>{t("Delete index")}</button>}
       {ex.job && <span role="status" className="badge">{t(ex.job.state)} · {t(ex.job.phase)}</span>}
@@ -57,7 +57,7 @@ function ProjectIndexes({ projectId }: { projectId: string | null }) {
           <td>{version.documentCount.toLocaleString(locale)}</td>
           <td>{(version.indexedBytes / 1024).toLocaleString(locale, { maximumFractionDigits: 1 })} KB</td>
           <td>{canEdit && ["ready", "retired"].includes(version.state) && <button className="btn" disabled={ex.busy || pending} onClick={() => {
-            if (window.confirm(`Activate version ${version.sequence}? Search results will use this version.`)) void ex.activate(version.id);
+            if (window.confirm(t("Activate version {version}? Search results will use this version.").replace("{version}", version.sequence.toLocaleString(locale)))) void ex.activate(version.id);
           }}>{t("Activate")}</button>}</td>
         </tr>)}
         {!ex.versions.length && <tr><td colSpan={5} className="empty">{ex.loading ? t("Loading versions…") : t("No builds yet. Push documents or run a crawl.")}</td></tr>}
@@ -91,7 +91,7 @@ function ProjectIndexes({ projectId }: { projectId: string | null }) {
         {!detail ? <div className="empty">{t("Select a document to inspect its fields and indexed terms.")}</div> : <div className="card-body stack">
           <div>
             <h2 dir="auto">{typeof detail.body.title === "string" ? detail.body.title : detail.documentId}</h2>
-            <p className="muted">Active version: {detail.activeVersion ? `v${detail.activeVersion}` : t("none")} · {detail.inActiveVersion ? t("Present in active index") : t("Absent from active index")}</p>
+            <p className="muted">{t("Active version")} <bdi>{detail.activeVersion ? `v${detail.activeVersion}` : t("none")}</bdi> · {t(detail.inActiveVersion ? "Present in active index" : "Absent from active index")}</p>
             {detail.state === "pending" && <p className="muted">{t("Stored changes await a successful rebuild.")}</p>}
             {detail.state === "deleted" && detail.inActiveVersion && <p className="muted">{t("Deletion is pending in the active search version.")}</p>}
             {externalUrl && <a className="btn" href={externalUrl} target="_blank" rel="noopener noreferrer">{t("Open page")}</a>}
@@ -107,7 +107,7 @@ function ProjectIndexes({ projectId }: { projectId: string | null }) {
           {typeof detail.body.content === "string" && <div className="document-preview" dir="auto">{detail.body.content.slice(0, 6000)}{detail.body.content.length > 6000 && "…"}</div>}
           <details><summary>{t("Stored fields")}</summary><pre className="codebox" dir="ltr">{JSON.stringify(detail.body, null, 2)}</pre></details>
           <details><summary>{t("Active indexed fields")}</summary><pre className="codebox" dir="ltr">{JSON.stringify(detail.activeDocument, null, 2)}</pre></details>
-          <details open><summary>Indexed terms · {detail.terms.length}</summary>
+          <details open><summary>{t("Indexed terms")} · {detail.terms.length.toLocaleString(locale)}</summary>
             {detail.termsTruncated && <p className="muted">{t("Showing the first 500 terms. Positions are capped at 100 per term.")}</p>}
             <div className="table-wrap"><table><thead><tr><th>{t("Field")}</th><th>{t("Term")}</th><th>TF / DF</th><th>{t("Positions")}</th></tr></thead><tbody>
               {detail.terms.map(term => <tr key={`${term.field}:${term.term}`}><td>{term.field}</td><td dir="auto">{term.term}</td><td>{term.frequency} / {term.documentFrequency}</td><td className="mono">{term.positions.join(", ")}{term.frequency > term.positions.length && "…"}</td></tr>)}
@@ -115,7 +115,7 @@ function ProjectIndexes({ projectId }: { projectId: string | null }) {
             </tbody></table></div>
           </details>
           {canEdit && !detail.deletedAt && <button className="btn" disabled={ex.busy || pending} onClick={() => {
-            if (window.confirm(`Delete document ${detail.documentId}? A background rebuild will remove it from search.`)) void ex.remove(detail.documentId);
+            if (window.confirm(t("Delete document {id}? A background rebuild will remove it from search.").replace("{id}", `\u2068${detail.documentId}\u2069`))) void ex.remove(detail.documentId);
           }}>{t("Delete document")}</button>}
         </div>}
       </section>

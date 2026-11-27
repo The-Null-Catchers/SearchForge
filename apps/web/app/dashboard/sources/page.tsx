@@ -34,20 +34,20 @@ function ProjectSources({ projectId }: { projectId: string | null }) {
     </form>}
     {error && <div role="alert" style={{ color: "var(--danger)", marginTop: 12 }}>{t(error)}</div>}
     <section className="card" style={{ marginTop: 14 }}><div className="card-head"><h2>{t("Websites")}</h2></div>
-      <div className="table-wrap"><table><thead><tr><th>{t("Name")}</th><th>{t("Last crawled")}</th><th>{t("Recrawl schedule")}</th><th>{t("Next run")}</th><th>Actions</th></tr></thead><tbody>
+      <div className="table-wrap"><table><thead><tr><th>{t("Name")}</th><th>{t("Last crawled")}</th><th>{t("Recrawl schedule")}</th><th>{t("Next run")}</th><th>{t("Actions")}</th></tr></thead><tbody>
         {data.sources.map(source => {
           const saved = data.schedules.find(s => s.sourceId === source.id);
           const active = data.jobs.some(j => j.sourceId === source.id && j.type === "crawl" && ["queued", "running"].includes(j.state));
           const deleting = !!source.deletionRequestedAt;
           const failedDeletion = data.jobs.some(job => job.type === "cleanup" && job.progress.targetId === source.id && job.state === "failed");
-          return <tr key={source.id}><td>{source.name}{deleting && <span className="badge">deleting</span>}</td><td>{source.lastCrawledAt ? new Date(source.lastCrawledAt).toLocaleString(locale) : "Never"}</td>
-            <td><select className="input" aria-label={`Recrawl schedule for ${source.name}`} disabled={!canEdit || !!busy || deleting}
+          return <tr key={source.id}><td><bdi>{source.name}</bdi>{deleting && <span className="badge">{t("deleting")}</span>}</td><td>{source.lastCrawledAt ? new Date(source.lastCrawledAt).toLocaleString(locale) : t("Never")}</td>
+            <td><select className="input" aria-label={t("Recrawl schedule for {name}").replace("{name}", source.name)} disabled={!canEdit || !!busy || deleting}
               value={saved?.enabled ? saved.intervalSeconds : 0}
               onChange={event => void schedule(source.id, Number(event.target.value) || saved?.intervalSeconds || 86400, event.target.value !== "0")}>
               <option value="0">{t("Off")}</option><option value="3600">{t("Every hour")}</option><option value="21600">{t("Every 6 hours")}</option><option value="86400">{t("Daily")}</option><option value="604800">{t("Weekly")}</option>
             </select></td><td>{saved?.enabled ? new Date(saved.nextRunAt).toLocaleString(locale) : "—"}</td>
             <td><div className="toolbar">{!deleting && <><button className="btn" onClick={() => setSelected({ id: source.id, pane: "pages" })}>{t("Pages")}</button>{canEdit && <><button className="btn" onClick={() => setSelected({ id: source.id, pane: "rules" })}>{t("Rules")}</button><button className="btn" disabled={!!busy} onClick={() => void crawl(source.id)}>{active ? t("Use existing crawl") : t("Run crawl")}</button></>}</>}{canDelete && <button className="btn" disabled={!!busy || (deleting && !failedDeletion)} onClick={() => {
-                const confirmation = window.prompt(`Delete ${source.name} and remove its content from every index version? Other documents stay searchable. Type the source name to confirm.`);
+                const confirmation = window.prompt(t("Delete {name} and remove its content from every index version? Type the source name to confirm.").replace("{name}", `\u2068${source.name}\u2069`));
                 if (confirmation === source.name) void remove(source.id, confirmation);
               }}>{deleting ? t("Retry deletion") : t("Delete source")}</button>}</div></td></tr>;
         })}
@@ -57,10 +57,10 @@ function ProjectSources({ projectId }: { projectId: string | null }) {
     {source && selected?.pane === "rules" && canEdit && <SourceEditor key={source.id} source={source} disabled={!!busy} save={(name, config) => update(source.id, name, config)}/>}
     {source && selected?.pane === "pages" && <CrawlExplorer key={source.id} sourceId={source.id} name={source.name}/>}
     <section className="card" style={{ marginTop: 14 }}><div className="card-head"><h2>{t("Recent jobs")}</h2><span className="muted">{t("Cancellation keeps the active search version available")}</span></div>
-      <div className="table-wrap"><table><thead><tr><th>{t("Type")}</th><th>Status</th><th>{t("Phase")}</th><th>{t("Processed / errors")}</th><th>{t("Created")}</th><th>Actions</th></tr></thead><tbody>
-        {data.jobs.map(job => <tr key={job.id}><td>{t(job.type)}</td><td><span className="badge">{job.cancelRequestedAt && job.state === "running" ? "cancelling" : job.state}</span></td><td>{t(job.phase)}</td>
+      <div className="table-wrap"><table><thead><tr><th>{t("Type")}</th><th>{t("Status")}</th><th>{t("Phase")}</th><th>{t("Processed / errors")}</th><th>{t("Created")}</th><th>{t("Actions")}</th></tr></thead><tbody>
+        {data.jobs.map(job => <tr key={job.id}><td>{t(job.type)}</td><td><span className="badge">{t(job.cancelRequestedAt && job.state === "running" ? "cancelling" : job.state)}</span></td><td>{t(job.phase)}</td>
           <td>{String(job.progress.processed ?? 0)} / {String(job.progress.failed ?? 0)}</td><td>{new Date(job.createdAt).toLocaleString(locale)}</td>
-          <td>{canEdit && job.type !== "cleanup" && ["queued", "running"].includes(job.state) && <button className="btn" disabled={!!busy || !!job.cancelRequestedAt} onClick={() => void cancel(job.id)}>{job.cancelRequestedAt ? t("Cancelling…") : "Cancel"}</button>}</td></tr>)}
+          <td>{canEdit && job.type !== "cleanup" && ["queued", "running"].includes(job.state) && <button className="btn" disabled={!!busy || !!job.cancelRequestedAt} onClick={() => void cancel(job.id)}>{job.cancelRequestedAt ? t("Cancelling…") : t("Cancel")}</button>}</td></tr>)}
         {!data.jobs.length && <tr><td colSpan={6} className="empty">{t("No jobs yet.")}</td></tr>}
       </tbody></table></div>
     </section>

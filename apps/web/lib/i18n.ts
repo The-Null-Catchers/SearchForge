@@ -413,9 +413,17 @@ const arabic: Record<string, string> = {
   "Search for documentation, knowledge bases, and product catalogs": "بحث في التوثيق وقواعد المعرفة وكتالوجات المنتجات",
   "The crawler and ingest API feed a durable queue. Workers publish immutable index segments, and Fastify serves searches from the active version.": "يرسل الزاحف وواجهة إدخال البيانات المهام إلى طابور محفوظ. ينشر العمال مقاطع فهرس ثابتة، وتنفذ Fastify البحث من الإصدار النشط.",
   "SDK documentation": "توثيق حزم التطوير", "Engineering case study": "دراسة الحالة الهندسية",
+  "Permanently delete this index and its documents and versions? Search stops immediately. Type {slug} to confirm.": "هل تريد حذف الفهرس ومستنداته وإصداراته نهائيًا؟ سيتوقف البحث فورًا. اكتب {slug} للتأكيد.",
+  "Activate version {version}? Search results will use this version.": "هل تريد تفعيل الإصدار {version}؟ ستستخدم نتائج البحث هذا الإصدار.",
+  "Delete document {id}? A background rebuild will remove it from search.": "هل تريد حذف المستند {id}؟ ستزيله إعادة البناء من نتائج البحث.",
+  "Recrawl schedule for {name}": "جدول إعادة الزحف للمصدر {name}",
+  "Delete {name} and remove its content from every index version? Type the source name to confirm.": "هل تريد حذف {name} وإزالة محتواه من كل إصدارات الفهرس؟ اكتب اسم المصدر للتأكيد.",
+  "Saved. Index rebuild job {id}.": "حُفظت الإعدادات. معرّف مهمة إعادة بناء الفهرس {id}.",
+  "Saved. No index rebuild was required.": "حُفظت الإعدادات. لم تكن إعادة بناء الفهرس مطلوبة.",
+  "Type {slug} to confirm": "اكتب {slug} للتأكيد",
   "BM25 ranking": "ترتيب BM25", "REST and SDKs": "واجهة REST وحزم SDK"
 };
 
 export function translate(locale: Locale, value: string): string {
-  return locale === "ar" ? arabic[value] ?? value : value;
+  return locale === "ar" && Object.hasOwn(arabic, value) ? arabic[value]! : value;
 }

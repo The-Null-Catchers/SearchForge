@@ -74,8 +74,8 @@ function ProjectSettings({ onDeleted }: { onDeleted: (receipt: string) => void }
       });
       setSettings(current => current ? { ...current, ...result } : current);
       setSaveMessage(result.rebuildJobId
-        ? `Saved. Language changes are rebuilding the active index in job ${result.rebuildJobId}.`
-        : "Saved. No index rebuild was required.");
+        ? t("Saved. Index rebuild job {id}.").replace("{id}", `\u2066${result.rebuildJobId}\u2069`)
+        : t("Saved. No index rebuild was required."));
       await refresh();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : t("Project settings update failed"));
@@ -126,8 +126,8 @@ function ProjectSettings({ onDeleted }: { onDeleted: (receipt: string) => void }
       {loading && <p className="muted" role="status">{t("Loading settings…")}</p>}
       {settings && <form onSubmit={saveSettings}>
         <div className="grid-2" style={{ marginTop: 16 }}>
-          <div className="field"><label>{t("Name")}</label><input className="input" value={settings.name} disabled={!canEdit} onChange={event => setSettings({ ...settings, name: event.target.value })} /></div>
-          <div className="field"><label>{t("Slug")}</label><input className="input mono" value={settings.slug} disabled /></div>
+          <div className="field"><label htmlFor="settings-name">{t("Name")}</label><input id="settings-name" className="input" dir="auto" value={settings.name} disabled={!canEdit} onChange={event => setSettings({ ...settings, name: event.target.value })} /></div>
+          <div className="field"><label htmlFor="settings-slug">{t("Slug")}</label><input id="settings-slug" className="input mono" dir="ltr" value={settings.slug} disabled /></div>
         </div>
         <div className="field" style={{ marginTop: 14 }}><label>{t("Description")}</label><textarea className="input" rows={4} value={settings.description} disabled={!canEdit} onChange={event => setSettings({ ...settings, description: event.target.value })} /></div>
         <div className="grid-2" style={{ marginTop: 14 }}>
@@ -147,7 +147,7 @@ function ProjectSettings({ onDeleted }: { onDeleted: (receipt: string) => void }
       {project && project.role !== "owner" && <p className="muted">{t("Only an organization owner can permanently delete this project.")}</p>}
       {project && project.role === "owner" && <form onSubmit={removeProject}>
         <p className="muted">{t("This permanently removes indexed documents, sources, API keys, analytics, jobs, and immutable index files. Security audit records and a minimal deletion tombstone are retained.")}</p>
-        <div className="field" style={{ marginTop: 16 }}><label>Type <span className="mono">{project.slug}</span> to confirm</label><input className="input" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} autoComplete="off" spellCheck={false} aria-label={t("Project deletion confirmation")} /></div>
+        <div className="field" style={{ marginTop: 16 }}><label htmlFor="settings-delete">{t("Type {slug} to confirm").replace("{slug}", `\u2066${project.slug}\u2069`)}</label><input id="settings-delete" className="input mono" dir="ltr" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} autoComplete="off" spellCheck={false} /></div>
         <button className="btn danger" disabled={deleting || confirmation !== project.slug} style={{ marginTop: 14 }}>{deleting ? t("Deleting…") : t("Delete project permanently")}</button>
       </form>}
     </section>
