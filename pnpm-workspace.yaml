@@ -6,3 +6,9 @@ onlyBuiltDependencies:
   - argon2
   - esbuild
   - msgpackr-extract
+
+overrides:
+  "fast-uri@^3": 3.1.9
+  "fast-uri@^4": 4.2.3
+  "next>postcss": 8.5.23
+  source-map-js: 1.2.2

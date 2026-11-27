@@ -16,14 +16,14 @@
     "@searchforge/shared": "workspace:*",
     "bullmq": "^5.58.5",
     "cheerio": "^1.1.2",
-    "drizzle-orm": "^0.44.5",
-    "fast-xml-parser": "^5.2.5",
-    "fastify": "^5.6.0",
+    "drizzle-orm": "^0.45.2",
+    "fast-xml-parser": "^5.12.0",
+    "fastify": "^5.12.6",
     "ipaddr.js": "^2.2.0",
     "picomatch": "^4.0.3",
     "prom-client": "^15.1.3",
     "ioredis": "^5.7.0",
-    "undici": "^7.16.0"
+    "undici": "^7.30.1"
   },
   "devDependencies": {
     "@types/node": "^24.3.0",
