@@ -152,7 +152,15 @@ try {
   assert.notEqual((await search.search('search')).indexVersion, versionBefore);
   const versions = await request('GET', `/v1/indexes/${project.index.id}/versions`, undefined, owner.accessToken);
   const old = versions.versions.find(version => String(version.sequence) === versionBefore);
-  await request('POST', `/v1/indexes/${project.index.id}/versions/${old.id}/activate`, {}, owner.accessToken);
+  const replacement = versions.versions.find(version => version.state === 'active');
+  assert.ok(old && replacement);
+  const observedDuringRollback = await Promise.all([
+    request('POST', `/v1/indexes/${project.index.id}/versions/${old.id}/activate`, {}, owner.accessToken),
+    ...Array.from({ length: 5 }, () => search.search('search'))
+  ]);
+  for (const found of observedDuringRollback.slice(1)) {
+    assert.ok([versionBefore, String(replacement.sequence)].includes(found.indexVersion));
+  }
   assert.equal((await search.search('search')).indexVersion, versionBefore);
 
   // Trusted loopback fixture exercises real HTTP, extraction and incremental recrawl.

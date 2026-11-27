@@ -349,8 +349,12 @@ async function verifySearchPlayground(page) {
 
   await page.getByRole("link", { name: "Indexes", exact: true }).click();
   page.once("dialog", dialog => dialog.accept());
+  const activationResponse = page.waitForResponse(response =>
+    response.request().method() === "POST" && response.url().endsWith("/activate"));
   const rollbackStarted = performance.now();
   await oldVersion.getByRole("button", { name: "Activate", exact: true }).click();
+  assert((await activationResponse).ok(), "Manual version activation failed");
+  const activationAcknowledgedMs = Math.round(performance.now() - rollbackStarted);
   await oldVersion.getByRole("cell", { name: "active", exact: true }).waitFor();
   const recordingPauseMs = await capture(page, "index-version-rollback.png");
 
@@ -383,7 +387,7 @@ async function verifySearchPlayground(page) {
   await page.setViewportSize({ width: 1440, height: 1000 });
   return { indexedDocuments: documents.length, indexVersion: arabic.indexVersion, arabicHits: arabic.hits.map(hit => hit.id), typoTopHit: typo.hits[0].id,
     overviewIsolation: true,
-    indexLifecycleMs: { importToJobCompletedMs, editToSearchVisibleMs, rollbackToSearchVisibleMs },
+    indexLifecycleMs: { importToJobCompletedMs, editToSearchVisibleMs, activationAcknowledgedMs, rollbackToSearchVisibleMs },
     synonym: { alias, beforeHits: beforeSynonym.total, afterTopHit: expanded.hits[0].id },
     rollback: { originalVersion: expanded.indexVersion, rebuiltVersion: rebuilt.indexVersion, activeVersion: rolledBack.indexVersion, restoredTitle: rolledBack.hits[0].document.title }
   };
