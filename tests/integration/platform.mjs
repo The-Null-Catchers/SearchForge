@@ -96,6 +96,12 @@ try {
   await search.trackClick({ query: result.query, documentId: result.hits[0].id, position: 1, searchEventId: result.searchEventId });
   const click = { query: result.query, documentId: 'js', position: 1, searchEventId: result.searchEventId };
   const foreignProject = await request('POST', `/v1/organizations/${org.id}/projects`, { name: 'Other corpus', slug: 'other-corpus' }, owner.accessToken);
+  for (const projectId of [project.id, foreignProject.id]) {
+    const headers = { authorization: `Bearer ${project.searchKey}`, 'x-searchforge-project-id': projectId };
+    const expected = projectId === project.id ? 200 : 403;
+    assert.equal((await app.inject({ method: 'POST', url: '/v1/indexes/docs/search', headers, payload: { query: 'javascript' } })).statusCode, expected);
+    assert.equal((await app.inject({ method: 'GET', url: '/v1/indexes/docs/autocomplete?q=java', headers })).statusCode, expected);
+  }
   const foreignEvent = (await pool.query('INSERT INTO search_events(project_id, index_id, query, result_count, latency_ms) VALUES ($1,$2,$3,1,1) RETURNING id', [foreignProject.id, foreignProject.index.id, result.query])).rows[0].id;
   async function clickRequest(payload) {
     return app.inject({ method: 'POST', url: '/v1/analytics/click', payload,

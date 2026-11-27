@@ -91,7 +91,7 @@ export class ApiKeyService {
     });
   }
 
-  async authenticate(raw: string, allowed: KeyKind[], ip?: string) {
+  async authenticate(raw: string, allowed: KeyKind[], ip?: string, expectedProjectId?: string) {
     const match = /^sf_(search|indexing|admin)_([A-Za-z0-9_-]{12})_([A-Za-z0-9_-]+)$/.exec(raw);
     if (!match) throw new AppError("UNAUTHENTICATED", "Invalid API key", 401);
     const [, kindValue, prefix, secret] = match;
@@ -119,6 +119,9 @@ export class ApiKeyService {
     const actual = Buffer.from(this.digest(secret!), "hex");
     if (expected.length !== actual.length || !timingSafeEqual(expected, actual)) {
       throw new AppError("UNAUTHENTICATED", "Invalid API key", 401);
+    }
+    if (expectedProjectId && expectedProjectId !== record.key.projectId) {
+      throw new AppError("FORBIDDEN", "API key belongs to a different project", 403);
     }
 
     await this.enforceRateLimit(record.key.id, record.key.rateLimitPerMinute);
