@@ -7,6 +7,9 @@ const baseUrl = (process.env.SEARCHFORGE_E2E_BASE_URL || "http://127.0.0.1").rep
 const artifactsDir = process.env.SEARCHFORGE_E2E_ARTIFACTS || "/artifacts/browser-e2e";
 const email = process.env.SEARCHFORGE_E2E_EMAIL || "owner@searchforge.local";
 const password = process.env.SEARCHFORGE_E2E_PASSWORD || "SearchForgeDemo123!";
+const videoDir = process.env.SEARCHFORGE_E2E_VIDEO_DIR;
+const recordingShots = new Set(["landing-page.png", "dashboard-overview.png", "playground-arabic.png",
+  "playground-bm25.png", "playground-typo.png", "playground-synonym.png", "index-version-rollback.png", "dashboard-analytics.png"]);
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -50,6 +53,7 @@ async function capture(page, name) {
     maskColor: "#182234",
     animations: "disabled"
   });
+  if (videoDir && recordingShots.has(name)) await delay(7000);
 }
 
 async function verifyOverviewIsolation(page, docs, labs, documentCount) {
@@ -196,7 +200,7 @@ async function verifySearchPlayground(page) {
     headers: { authorization: `Bearer ${searchKey}` }, data: { documents: [] }
   });
   assert(deniedWrite.status() === 403, "Search-only key could enter the document ingestion route");
-  const documents = JSON.parse(fs.readFileSync(path.join(__dirname, "../fixtures/demo-documents.json"), "utf8"));
+  const documents = JSON.parse(fs.readFileSync(path.resolve(__dirname, "../../fixtures/demo-documents.json"), "utf8"));
   const importStarted = performance.now();
   const batch = await request("POST", "/v1/indexes/docs/documents/batch", indexingKey, { documents });
   let state;
@@ -379,7 +383,8 @@ async function verifySearchPlayground(page) {
 async function main() {
   fs.mkdirSync(artifactsDir, { recursive: true });
   const browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+  const viewport = { width: 1440, height: 1000 };
+  const context = await browser.newContext({ viewport, ...(videoDir ? { recordVideo: { dir: videoDir, size: viewport } } : {}) });
   const page = await context.newPage();
   const pageErrors = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
@@ -452,6 +457,7 @@ async function main() {
     fs.writeFileSync(path.join(artifactsDir, "result.json"), JSON.stringify({ status: "failed", error: error instanceof Error ? error.message : String(error), url: page.url(), pageErrors }, null, 2));
     throw error;
   } finally {
+    await context.close();
     await browser.close();
   }
 }
