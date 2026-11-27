@@ -104,6 +104,8 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - run: cp .env.example .env
       - name: Build and start the development stack
         run: docker compose up -d --build --wait --wait-timeout 180
@@ -116,9 +118,11 @@ jobs:
       - name: Run Chromium browser E2E
         run: |
           mkdir -p artifacts/browser-e2e
+          export SEARCHFORGE_E2E_SOURCE_SHA="$(git rev-parse HEAD)"
           docker run --rm --network host \
             -e SEARCHFORGE_E2E_BASE_URL=http://127.0.0.1 \
             -e SEARCHFORGE_E2E_ARTIFACTS=/artifacts/browser-e2e \
+            -e SEARCHFORGE_E2E_SOURCE_SHA \
             -v "$PWD/tests/browser:/tests:ro" \
             -v "$PWD/fixtures:/fixtures:ro" \
             -v "$PWD/artifacts:/artifacts" \

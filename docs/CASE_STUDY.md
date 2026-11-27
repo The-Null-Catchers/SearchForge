@@ -8,13 +8,13 @@ SearchForge is a self-hosted lexical search platform for developers who need to 
 
 The TypeScript monorepo separates a Next.js control plane, a Fastify REST API, a crawler, an indexer, and a background worker. PostgreSQL stores durable tenant metadata, jobs, documents, analytics and active index pointers; Redis supports ephemeral BullMQ delivery. Search segments are persisted as immutable files.
 
-The indexer tokenizes each searchable field and stores term frequencies and positional postings. The search core evaluates query terms against postings, computes per-field BM25 with configurable boosts, and returns explain components. Arabic processing includes Unicode normalization, configurable Alef/Ya/taa marbuta handling, diacritic and tatweel removal, and optional light stemming. English uses lightweight suffix stemming. Neither analyzer is a general-purpose morphological or semantic language model.
+The indexer tokenizes each searchable field and stores term frequencies and positional postings. The search core evaluates query terms against postings, computes per-field BM25 with configurable boosts, and returns explain components. The corpus document count and per-term document frequency determine IDF. Field lengths and average field length normalize term frequency, and configured field boosts scale each contribution. Phrase verification preserves positional gaps left by removed stop words, meaning the omitted words themselves are not compared. Arabic processing includes Unicode normalization, configurable Alef/Ya/taa marbuta handling, diacritic and tatweel removal, and optional light stemming. English uses lightweight suffix stemming. Neither analyzer is a general-purpose morphological or semantic language model.
 
-The engine also supports quoted phrases through positional postings, prefix expansion, bounded deletion-dictionary typo candidates, project synonyms, compound filters, facets, and safe highlight ranges. A future hybrid/vector retriever is possible, but no vector-search capability is claimed.
+The engine also supports quoted phrases through positional postings, prefix expansion, deletion-dictionary typo candidates bounded to 64 UTF-16 code units, project synonyms, compound filters, facets, and safe highlight ranges. A future hybrid/vector retriever is possible, but no vector-search capability is claimed.
 
 ## Immutable releases and failure handling
 
-New index builds write and validate a separate segment before changing the active version pointer in a PostgreSQL transaction. Existing readers can finish using their previously selected version. An authorized user can activate a retained earlier version to roll back search results. The underlying stored document edits remain, so rebuilding again may republish those edits.
+New index builds write and validate a separate segment before changing the active version pointer in a PostgreSQL transaction. The API resolves the pointer and version in a single database snapshot. Readers can finish on the version they already selected. An authorized user can activate a retained earlier version to roll back search results. The underlying stored document edits remain, so rebuilding again may republish those edits.
 
 Indexing and crawl work use a durable PostgreSQL outbox, worker execution identifiers, heartbeat/recovery fencing, and bounded retry behavior. The crawler validates DNS destinations, pins resolved addresses, checks redirects, honors robots rules, and blocks private-network access by default. Production operators must still enforce egress restrictions.
 
@@ -24,7 +24,7 @@ Search requests are scoped through project API keys. Organization/project permis
 
 The eight-document synthetic corpus in `fixtures/demo-documents.json` covers English, Arabic, and mixed-language search. The local seed creates two demo organizations and projects. The existing Chromium E2E script exercises bilingual search, typo expansion, synonyms, document edits, version activation, rollback and project switching. See `docs/playground-demo.md` for the exact walkthrough.
 
-The portfolio interface provides a landing page, dashboard, Arabic/English locale switch for core flows, and a playground that exposes search-key authentication, filters, facets, autocomplete, matching-term highlights and score breakdowns. The locale implementation is incremental: some secondary management screens still contain English-only strings.
+The portfolio interface provides a landing page, dashboard, Arabic/English locale switch for core flows, and a playground that exposes search-key authentication, filters, facets, autocomplete, matching-term highlights and score breakdowns. The locale switch covers the main signed-in routes and account forms. Technical identifiers, submitted content and some diagnostics retain their source language.
 
 ## Relevance evaluation and explain correctness
 
@@ -36,7 +36,7 @@ Search-core scoring now uses query-scoped document-ID posting maps to avoid repe
 
 The repository contains a real authenticated HTTP load harness with configurable request count, concurrency, warmup and error/p95 gates. It measures wall-clock p50/p95/p99, throughput and error rate. The disposable CI recovery rehearsal checks PostgreSQL counts, index segment checksums, restored object retrieval, and an Arabic query on the restored active segment.
 
-These are verification mechanisms, not evidence of a particular VPS latency, throughput, RPO or RTO. Target-environment measurements must include the exact source SHA, corpus, CPU/RAM, network topology, warmup, query mix and request count. Never substitute engineering targets for measurements. See `docs/release-evidence.md`.
+The [historical baseline](portfolio-baseline.md) measured 120 successful requests at 215.76 requests/s and 31.98 ms p95 on eight documents. The [benchmark guide](benchmarking.md) describes the additional loopback workloads. VPS latency, capacity, RPO and RTO need deployment-specific measurements. Target-environment measurements must include the exact source SHA, corpus, CPU/RAM, network topology, warmup, query mix and request count. Never substitute engineering targets for measurements. See `docs/release-evidence.md`.
 
 ## Tradeoffs and limitations
 
@@ -46,8 +46,8 @@ These are verification mechanisms, not evidence of a particular VPS latency, thr
 - Redis is treated as reconstructible queue/cache state, while PostgreSQL, immutable index files and MinIO must be backed up as a matched set.
 - The public landing page is informational; the playground requires a real project and a scoped API key.
 - SDK packages are not published. License and contributor attribution must be reviewed before distribution.
-- Representative VPS load measurements, target restore evidence, complete Arabic UI coverage and a reviewed release license remain release blockers.
+- Representative VPS load measurements, target restore evidence, and a reviewed release license remain release blockers.
 
 ## Future improvements
 
-Expand the initial relevance judgments with independently labeled real-world-style synthetic queries, compare analyzer and ranking configurations, add comprehensive Arabic interface translations, capture genuine release screenshots and a short walkthrough video, and validate performance and restore on the intended target environment. Sharding, hybrid retrieval and SDK publishing remain separate decisions rather than implied completed features.
+Expand the initial relevance judgments with independently labeled real-world-style synthetic queries, compare analyzer and ranking configurations, extend Arabic coverage of raw diagnostics where appropriate, and validate performance and restore on the intended target environment. Sharding, hybrid retrieval and SDK publishing remain separate decisions rather than implied completed features.

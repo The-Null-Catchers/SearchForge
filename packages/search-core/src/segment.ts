@@ -20,16 +20,16 @@ export function buildSegment(
   const searchableFields = options.searchableFields ?? ["title", "headings", "content", "url", "tags"];
   const analyzer = new Analyzer(settings);
   const postings = new Map<string, Map<string, TermPostings>>();
-  const documentLengths: Record<string, Record<string, number>> = {};
+  const documentLengths: Record<string, Record<string, number>> = Object.create(null);
   const fieldTotals = new Map<string, number>();
-  const docs: Record<string, SearchDocument> = {};
+  const docs: Record<string, SearchDocument> = Object.create(null);
   const vocabulary = new Set<string>();
 
   for (const document of documents) {
     if (!document.id) throw new Error("Every search document requires a non-empty id");
     if (docs[document.id]) throw new Error(`Duplicate document id: ${document.id}`);
     docs[document.id] = structuredClone(document);
-    documentLengths[document.id] = {};
+    documentLengths[document.id] = Object.create(null);
 
     for (const field of searchableFields) {
       const text = asText(document[field]);
@@ -65,12 +65,12 @@ export function buildSegment(
     }
   }
 
-  const serializedPostings: Segment["postings"] = {};
+  const serializedPostings: Segment["postings"] = Object.create(null);
   for (const [field, terms] of postings) {
     serializedPostings[field] = Object.fromEntries(terms);
   }
 
-  const averageFieldLength: Record<string, number> = {};
+  const averageFieldLength: Record<string, number> = Object.create(null);
   for (const [field, total] of fieldTotals) {
     averageFieldLength[field] = documents.length === 0 ? 0 : total / documents.length;
   }

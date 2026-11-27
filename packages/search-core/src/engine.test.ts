@@ -48,6 +48,15 @@ describe("SegmentSearchEngine", () => {
     expect(result.hits[0]?.id).toBe("a");
   });
 
+  it("keeps long terms searchable without building typo candidates for them", () => {
+    const term = "a".repeat(68) + "documentation";
+    const indexed = buildSegment([{ id: "long", title: term }], settings, { version: "v1" });
+    const longTermEngine = new SegmentSearchEngine(indexed);
+    expect(Object.keys(indexed.typoDeletes ?? {})).toHaveLength(0);
+    expect(longTermEngine.search(searchRequestSchema.parse({ query: term })).hits[0]?.id).toBe("long");
+    expect(longTermEngine.search(searchRequestSchema.parse({ query: `x${term.slice(1)}` })).total).toBe(0);
+  });
+
   it("uses the persisted deletion dictionary without scanning the full vocabulary", () => {
     const guardedVocabulary = new Proxy(segment.vocabulary, {
       get(target, property, receiver) {
@@ -83,6 +92,29 @@ describe("SegmentSearchEngine", () => {
   it("returns facet counts", () => {
     const result = engine.search(searchRequestSchema.parse({ query: "search", facets: ["metadata.category"] }));
     expect(result.facets["metadata.category"]).toBeDefined();
+  });
+
+  it("counts each facet value once per matching document", () => {
+    const indexed = buildSegment([
+      { id: "constructor", title: "Developer reference", tags: ["api", "api", "__proto__"] },
+      { id: "other", title: "Developer guide", tags: ["api", "guide"] }
+    ], settings, { version: "v1" });
+    const result = new SegmentSearchEngine(indexed).search(searchRequestSchema.parse({ query: "developer", facets: ["tags"] }));
+    expect(result.total).toBe(2);
+    expect(Object.entries(result.facets.tags!)).toEqual(expect.arrayContaining([["api", 2], ["__proto__", 1], ["guide", 1]]));
+  });
+
+  it("preserves stop-word gaps in phrases and explains repeated phrase boosts", () => {
+    const configured = indexSettingsSchema.parse({ stopWords: { en: ["for"] } });
+    const indexed = buildSegment([
+      { id: "spaced", title: "Search for developers" },
+      { id: "adjacent", title: "Search developers" }
+    ], configured, { version: "v1" });
+    const result = new SegmentSearchEngine(indexed).search(searchRequestSchema.parse({
+      query: '"search for developers" "search for developers"', debug: true
+    }));
+    expect(result.hits.map(hit => hit.id)).toEqual(["spaced"]);
+    expect(Object.values(result.hits[0]!.explanation ?? {})).toEqual([result.hits[0]!.score]);
   });
 
   it("supports nested AND/OR filters with ISO date comparisons", () => {

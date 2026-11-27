@@ -1,5 +1,5 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull, lt, or, sql } from "drizzle-orm";
 import { apiKeys, projectQuotas, projects, usageCounters, type createDatabase } from "@searchforge/db";
 import { AppError } from "@searchforge/shared";
 import type { Redis as IORedis } from "ioredis";
@@ -91,7 +91,7 @@ export class ApiKeyService {
     });
   }
 
-  async authenticate(raw: string, allowed: KeyKind[], ip?: string) {
+  async authenticate(raw: string, allowed: KeyKind[], ip?: string, expectedProjectId?: string) {
     const match = /^sf_(search|indexing|admin)_([A-Za-z0-9_-]{12})_([A-Za-z0-9_-]+)$/.exec(raw);
     if (!match) throw new AppError("UNAUTHENTICATED", "Invalid API key", 401);
     const [, kindValue, prefix, secret] = match;
@@ -120,10 +120,18 @@ export class ApiKeyService {
     if (expected.length !== actual.length || !timingSafeEqual(expected, actual)) {
       throw new AppError("UNAUTHENTICATED", "Invalid API key", 401);
     }
+    if (expectedProjectId && expectedProjectId !== record.key.projectId) {
+      throw new AppError("FORBIDDEN", "API key belongs to a different project", 403);
+    }
 
     await this.enforceRateLimit(record.key.id, record.key.rateLimitPerMinute);
     await this.consumeApiRequest(record.key.projectId);
-    void this.db.update(apiKeys).set({ lastUsedAt: new Date() }).where(eq(apiKeys.id, record.key.id));
+    const usedAt = new Date();
+    const staleBefore = new Date(usedAt.getTime() - 60_000);
+    if (!record.key.lastUsedAt || record.key.lastUsedAt < staleBefore) {
+      await this.db.update(apiKeys).set({ lastUsedAt: usedAt })
+        .where(and(eq(apiKeys.id, record.key.id), or(isNull(apiKeys.lastUsedAt), lt(apiKeys.lastUsedAt, staleBefore))));
+    }
     return {
       id: record.key.id,
       projectId: record.key.projectId,

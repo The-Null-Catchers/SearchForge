@@ -1,0 +1,53 @@
+{
+  "gitSha": "aaec7fc3a450bf033cadba98a5e12aca0ae7eaed",
+  "environment": "Omarchy 4.5.0, native Caddy 2.11.9, PostgreSQL 17.12 and Redis 7.4.9, API/indexer and Node load generator on the same host",
+  "generatedAt": "2026-11-27T13:27:47.039Z",
+  "runner": {
+    "platform": "linux",
+    "release": "7.2.15-4-omarchy",
+    "cpu": "Intel(R) Core(TM) i5-1035G1 CPU @ 1.00GHz",
+    "logicalCpuCount": 8,
+    "memoryBytes": 16528609280,
+    "node": "v22.23.5"
+  },
+  "queries": [
+    "javascript",
+    "distributed systems",
+    "محرك بحث",
+    "تطبيع النص العربي"
+  ],
+  "scenarios": [
+    {
+      "documentCount": 8,
+      "indexBytes": 56032,
+      "concurrency": 1,
+      "ingestToCompletionMs": 866,
+      "workerJobMs": 71,
+      "file": "search-8-c1.json"
+    },
+    {
+      "documentCount": 8,
+      "indexBytes": 56032,
+      "concurrency": 12,
+      "ingestToCompletionMs": 866,
+      "workerJobMs": 71,
+      "file": "search-8-c12.json"
+    },
+    {
+      "documentCount": 800,
+      "indexBytes": 1141653,
+      "concurrency": 1,
+      "ingestToCompletionMs": 1332,
+      "workerJobMs": 289,
+      "file": "search-800-c1.json"
+    },
+    {
+      "documentCount": 800,
+      "indexBytes": 1141653,
+      "concurrency": 12,
+      "ingestToCompletionMs": 1332,
+      "workerJobMs": 289,
+      "file": "search-800-c12.json"
+    }
+  ]
+}

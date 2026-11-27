@@ -8,6 +8,7 @@ import type { ApiKeyService } from "../api-keys.js";
 import type { SearchRuntime } from "../search-runtime.js";
 
 type Db = ReturnType<typeof createDatabase>["db"];
+const projectHeader = z.string().uuid().optional();
 
 function apiToken(request: FastifyRequest): string {
   const header = request.headers.authorization;
@@ -16,12 +17,14 @@ function apiToken(request: FastifyRequest): string {
 }
 
 async function resolveIndex(db: Db, projectId: string, slug: string) {
-  const [index] = await db.select().from(indexes)
+  // Resolve the pointer and its version in one database snapshot during activation.
+  const [active] = await db.select({ index: indexes, version: indexVersions }).from(indexes)
+    .leftJoin(indexVersions, and(eq(indexVersions.id, indexes.activeVersionId), eq(indexVersions.indexId, indexes.id)))
     .where(and(eq(indexes.projectId, projectId), eq(indexes.slug, slug), sql`${indexes.deletionRequestedAt} is null`))
     .limit(1);
-  if (!index) throw new AppError("INDEX_NOT_FOUND", "The requested index does not exist", 404);
+  if (!active) throw new AppError("INDEX_NOT_FOUND", "The requested index does not exist", 404);
+  const { index, version } = active;
   if (!index.activeVersionId) throw new AppError("INDEX_NOT_FOUND", "The index does not have an active version yet", 409);
-  const [version] = await db.select().from(indexVersions).where(eq(indexVersions.id, index.activeVersionId)).limit(1);
   if (!version || version.state !== "active") throw new AppError("INDEX_NOT_FOUND", "Active index version is unavailable", 409);
   return { index, version };
 }
@@ -40,7 +43,8 @@ export async function searchRoutes(
       rows.map(row => ({ terms: row.terms, oneWay: row.oneWay })));
   }
   app.post("/v1/indexes/:indexSlug/search", async (request) => {
-    const auth = await keys.authenticate(apiToken(request), ["search", "indexing", "admin"], request.ip);
+    const auth = await keys.authenticate(apiToken(request), ["search", "indexing", "admin"], request.ip,
+      projectHeader.parse(request.headers["x-searchforge-project-id"]));
     await keys.consumeSearch(auth.projectId);
     const { indexSlug } = z.object({ indexSlug: z.string().min(1).max(80) }).parse(request.params);
     const query = searchRequestSchema.parse(request.body);
@@ -61,7 +65,8 @@ export async function searchRoutes(
   });
 
   app.get("/v1/indexes/:indexSlug/autocomplete", async (request) => {
-    const auth = await keys.authenticate(apiToken(request), ["search", "indexing", "admin"], request.ip);
+    const auth = await keys.authenticate(apiToken(request), ["search", "indexing", "admin"], request.ip,
+      projectHeader.parse(request.headers["x-searchforge-project-id"]));
     const { indexSlug } = z.object({ indexSlug: z.string().min(1).max(80) }).parse(request.params);
     const { q, limit } = z.object({ q: z.string().max(200), limit: z.coerce.number().int().min(1).max(20).default(8) }).parse(request.query);
     const { index, version } = await resolveIndex(db, auth.projectId, indexSlug);

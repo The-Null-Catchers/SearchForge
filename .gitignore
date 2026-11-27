@@ -14,3 +14,4 @@ storage/
 .turbo/
 .dart_tool/
 /backups/
+/artifacts/

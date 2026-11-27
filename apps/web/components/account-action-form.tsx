@@ -1,4 +1,5 @@
 "use client";
+import { useLocale } from "./locale-context";
 import Link from "next/link";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { accountAction } from "../lib/auth-api";
@@ -11,6 +12,7 @@ const labels = {
 } as const;
 
 export function AccountActionForm({ action }: { action: Action }) {
+  const { t, locale, setLocale } = useLocale();
   const [token, setToken] = useState("");
   const [ready, setReady] = useState(action === "forgot-password");
   const [error, setError] = useState("");
@@ -45,25 +47,25 @@ export function AccountActionForm({ action }: { action: Action }) {
       setComplete(true); setToken("");
       if (action === "reset-password") sessionStorage.removeItem("sf_access_token");
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : "The request failed.");
+      setError(failure instanceof Error ? failure.message : t("The request failed."));
     } finally { inFlight.current = false; setLoading(false); }
   };
   const copy = labels[action];
   const missing = ready && action !== "forgot-password" && !token && !complete;
   return <main className="login-shell"><form className="card login-card stack" onSubmit={submit}>
-    <Link href="/login" className="brand"><div className="brand-mark">⌁</div>SearchForge</Link>
-    <div><div className="eyebrow">Account security</div><h1>{copy.title}</h1><p className="muted">{copy.description}</p></div>
-    {complete ? <p role="status">{copy.success}</p> : <>
-      {action === "forgot-password" && <div className="field"><label htmlFor="email">Email</label><input id="email" className="input" name="email" type="email" autoComplete="email" required /></div>}
+    <div className="toolbar"><Link href="/login" className="brand"><span className="brand-mark">⌁</span>SearchForge</Link><button className="btn locale-btn" type="button" onClick={() => setLocale(locale === "en" ? "ar" : "en")} aria-label={t("Switch language")}>{locale === "en" ? "العربية" : "English"}</button></div>
+    <div><div className="eyebrow">{t("Account security")}</div><h1>{t(copy.title)}</h1><p className="muted">{t(copy.description)}</p></div>
+    {complete ? <p role="status">{t(copy.success)}</p> : <>
+      {action === "forgot-password" && <div className="field"><label htmlFor="email">Email</label><input id="email" className="input" name="email" type="email" dir="ltr" autoComplete="email" required /></div>}
       {action === "reset-password" && <>
-        <div className="field"><label htmlFor="password">New password</label><input id="password" className="input" name="password" type="password" autoComplete="new-password" minLength={10} maxLength={200} required /></div>
-        <div className="field"><label htmlFor="confirm">Confirm password</label><input id="confirm" className="input" name="confirmPassword" type="password" autoComplete="new-password" minLength={10} maxLength={200} required /></div>
+        <div className="field"><label htmlFor="password">{t("New password")}</label><input id="password" className="input" name="password" type="password" dir="ltr" autoComplete="new-password" minLength={10} maxLength={200} required /></div>
+        <div className="field"><label htmlFor="confirm">{t("Confirm password")}</label><input id="confirm" className="input" name="confirmPassword" type="password" dir="ltr" autoComplete="new-password" minLength={10} maxLength={200} required /></div>
       </>}
-      {missing && <p role="alert">The link is missing its token. Open the complete link from your email or request a new link.</p>}
-      {error && <p role="alert" style={{ color: "var(--danger)" }}>{error}</p>}
-      <button className="btn primary" disabled={loading || !ready || missing}>{loading ? "Working…" : copy.button}</button>
+      {missing && <p role="alert">{t("The link is missing its token. Open the complete link from your email or request a new link.")}</p>}
+      {error && <p role="alert" style={{ color: "var(--danger)" }}>{t(error)}</p>}
+      <button className="btn primary" disabled={loading || !ready || missing}>{loading ? "Working…" : t(copy.button)}</button>
     </>}
-    <Link className="btn" href="/login">Back to sign in</Link>
-    {action === "reset-password" && <Link className="btn" href="/forgot-password">Request another reset link</Link>}
+    <Link className="btn" href="/login">{t("Back to sign in")}</Link>
+    {action === "reset-password" && <Link className="btn" href="/forgot-password">{t("Request another reset link")}</Link>}
   </form></main>;
 }

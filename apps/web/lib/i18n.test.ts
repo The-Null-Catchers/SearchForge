@@ -43,5 +43,6 @@ describe("interface localization", () => {
   it("keeps English strings unchanged and safely falls back for untranslated labels", () => {
     expect(translate("en", "Search Playground")).toBe("Search Playground");
     expect(translate("ar", "A newly added label")).toBe("A newly added label");
+    expect(translate("ar", "constructor")).toBe("constructor");
   });
 });

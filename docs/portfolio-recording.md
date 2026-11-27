@@ -1,6 +1,8 @@
-# SearchForge portfolio recording shot list
+# SearchForge portfolio recording and shot list
 
-This is a recording plan, not a generated video. Record only from a running disposable SearchForge environment using synthetic data. Never show plaintext API keys, session tokens, or customer data.
+[Watch the browser recording](images/portfolio/searchforge-demo.mp4) · [Screenshot gallery and source revision](images/portfolio/)
+
+Record only from a running disposable SearchForge environment using synthetic data. Never show plaintext API keys, session tokens, or customer data.
 
 ## Preparation
 
@@ -26,4 +28,4 @@ This is a recording plan, not a generated video. Record only from a running disp
 
 The Chromium browser E2E script writes genuine screenshots and a JSON result to its configured artifact directory. After a successful final-head run, review and copy selected files to `docs/images/portfolio/` with the source commit SHA recorded. Suitable captures: landing, dashboard overview, Arabic playground, BM25 explanation, index rollback, analytics. Do not add invented or manually mocked images.
 
-A complete 60–120 second recording is pending an environment that supports genuine browser capture and video recording.
+To reproduce automated browser footage, add `-e SEARCHFORGE_E2E_VIDEO_DIR=/artifacts/portfolio-video` to the pinned Playwright command in [browser E2E](browser-e2e.md). It pauses on the main visual checkpoints. Review the file before sharing, and trim setup or failed attempts to 60–120 seconds.

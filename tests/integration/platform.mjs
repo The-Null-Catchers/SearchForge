@@ -96,6 +96,14 @@ try {
   await search.trackClick({ query: result.query, documentId: result.hits[0].id, position: 1, searchEventId: result.searchEventId });
   const click = { query: result.query, documentId: 'js', position: 1, searchEventId: result.searchEventId };
   const foreignProject = await request('POST', `/v1/organizations/${org.id}/projects`, { name: 'Other corpus', slug: 'other-corpus' }, owner.accessToken);
+  for (const projectId of [project.id, foreignProject.id]) {
+    const headers = { authorization: `Bearer ${project.searchKey}`, 'x-searchforge-project-id': projectId };
+    const expected = projectId === project.id ? 200 : 403;
+    assert.equal((await app.inject({ method: 'POST', url: '/v1/indexes/docs/search', headers, payload: { query: 'javascript' } })).statusCode, expected);
+    assert.equal((await app.inject({ method: 'GET', url: '/v1/indexes/docs/autocomplete?q=java', headers })).statusCode, expected);
+  }
+  const { keys } = await request('GET', `/v1/projects/${project.id}/api-key-controls`, undefined, owner.accessToken);
+  assert.ok(keys.find(key => key.kind === 'search')?.lastUsedAt, 'Successful requests should record when the key was used');
   const foreignEvent = (await pool.query('INSERT INTO search_events(project_id, index_id, query, result_count, latency_ms) VALUES ($1,$2,$3,1,1) RETURNING id', [foreignProject.id, foreignProject.index.id, result.query])).rows[0].id;
   async function clickRequest(payload) {
     return app.inject({ method: 'POST', url: '/v1/analytics/click', payload,
@@ -146,7 +154,15 @@ try {
   assert.notEqual((await search.search('search')).indexVersion, versionBefore);
   const versions = await request('GET', `/v1/indexes/${project.index.id}/versions`, undefined, owner.accessToken);
   const old = versions.versions.find(version => String(version.sequence) === versionBefore);
-  await request('POST', `/v1/indexes/${project.index.id}/versions/${old.id}/activate`, {}, owner.accessToken);
+  const replacement = versions.versions.find(version => version.state === 'active');
+  assert.ok(old && replacement);
+  const observedDuringRollback = await Promise.all([
+    request('POST', `/v1/indexes/${project.index.id}/versions/${old.id}/activate`, {}, owner.accessToken),
+    ...Array.from({ length: 5 }, () => search.search('search'))
+  ]);
+  for (const found of observedDuringRollback.slice(1)) {
+    assert.ok([versionBefore, String(replacement.sequence)].includes(found.indexVersion));
+  }
   assert.equal((await search.search('search')).indexVersion, versionBefore);
 
   // Trusted loopback fixture exercises real HTTP, extraction and incremental recrawl.

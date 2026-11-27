@@ -1,20 +1,20 @@
 import { createHash } from "node:crypto";
 import type { SearchRequest } from "@searchforge/shared";
 import { Analyzer } from "./analyzer.js";
-import { buildDeletionDictionary, damerauLevenshtein, deletionVariants, lowerBound } from "./distance.js";
-import type { CoreSearchResponse, SearchCore, SearchDocument, Segment, TermPostings } from "./types.js";
+import { buildDeletionDictionary, damerauLevenshtein, deletionVariants, lowerBound, MAX_TYPO_TOKEN_LENGTH } from "./distance.js";
+import type { AnalyzerToken, CoreSearchResponse, SearchCore, SearchDocument, Segment, TermPostings } from "./types.js";
 
 type ParsedQuery = {
-  phrases: string[][];
+  phrases: AnalyzerToken[][];
   terms: string[];
 };
 
 type SynonymMap = Map<string, Set<string>>;
 
 function parseQuery(query: string, analyzer: Analyzer): ParsedQuery {
-  const phrases: string[][] = [];
+  const phrases: AnalyzerToken[][] = [];
   const remainder = query.replace(/"([^"]+)"/g, (_match, phrase: string) => {
-    const analyzed = analyzer.analyzeQueryTerm(phrase);
+    const analyzed = analyzer.analyze(phrase);
     if (analyzed.length > 0) phrases.push(analyzed);
     return " ";
   });
@@ -24,13 +24,13 @@ function parseQuery(query: string, analyzer: Analyzer): ParsedQuery {
   };
 }
 
-function positionsContainPhrase(positionLists: number[][]): boolean {
+function positionsContainPhrase(positionLists: number[][], phrase: AnalyzerToken[]): boolean {
   if (positionLists.length === 0) return false;
   const first = new Set(positionLists[0]);
   for (const start of first) {
     let ok = true;
     for (let offset = 1; offset < positionLists.length; offset += 1) {
-      if (!positionLists[offset]!.includes(start + offset)) {
+      if (!positionLists[offset]!.includes(start + phrase[offset]!.position - phrase[0]!.position)) {
         ok = false;
         break;
       }
@@ -69,7 +69,7 @@ function getField(document: SearchDocument, path: string): unknown {
   const parts = path.split(".");
   let value: unknown = document;
   for (const part of parts) {
-    if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+    if (!value || typeof value !== "object" || Array.isArray(value) || !Object.hasOwn(value, part)) return undefined;
     value = (value as Record<string, unknown>)[part];
   }
   return value;
@@ -229,12 +229,15 @@ export class SegmentSearchEngine implements SearchCore {
   }
 
   private typoCandidates(term: string, maxDistance: number, limit = 12): string[] {
-    if (term.length < this.segment.settings.typoTolerance.minTokenLength) return [];
+    if (term.length < this.segment.settings.typoTolerance.minTokenLength || term.length > MAX_TYPO_TOKEN_LENGTH) return [];
 
     const candidateTerms = new Set<string>();
     for (const variant of deletionVariants(term, maxDistance)) {
+      if (!Object.hasOwn(this.typoDeletes, variant)) continue;
       for (const candidate of this.typoDeletes[variant] ?? []) {
-        if (Math.abs(candidate.length - term.length) <= maxDistance) candidateTerms.add(candidate);
+        if (candidate.length <= MAX_TYPO_TOKEN_LENGTH && Math.abs(candidate.length - term.length) <= maxDistance) {
+          candidateTerms.add(candidate);
+        }
       }
     }
 
@@ -264,10 +267,6 @@ export class SegmentSearchEngine implements SearchCore {
     return [...values];
   }
 
-  private posting(field: string, term: string): TermPostings | undefined {
-    return this.segment.postings[field]?.[term];
-  }
-
   private bm25(field: string, termPostings: TermPostings, documentId: string, posting: TermPostings["postings"][number] | undefined): number {
     if (!posting) return 0;
     const n = Math.max(1, this.segment.documentCount);
@@ -281,12 +280,12 @@ export class SegmentSearchEngine implements SearchCore {
     return idf * ((tf * (k1 + 1)) / (tf + k1 * (1 - b + b * (length / average))));
   }
 
-  private phraseMatch(documentId: string, phrase: string[], postingLookup: Map<TermPostings, Map<string, TermPostings["postings"][number]>>): boolean {
-    for (const [field, fieldTerms] of Object.entries(this.segment.postings)) {
+  private phraseMatch(documentId: string, phrase: AnalyzerToken[], postingLookup: Map<TermPostings, Map<string, TermPostings["postings"][number]>>): boolean {
+    for (const fieldTerms of Object.values(this.segment.postings)) {
       const lists: number[][] = [];
       let missing = false;
-      for (const term of phrase) {
-        const termPostings = fieldTerms[term];
+      for (const { term } of phrase) {
+        const termPostings = Object.hasOwn(fieldTerms, term) ? fieldTerms[term] : undefined;
         const posting = termPostings ? postingLookup.get(termPostings)?.get(documentId) : undefined;
         if (!posting) {
           missing = true;
@@ -294,7 +293,7 @@ export class SegmentSearchEngine implements SearchCore {
         }
         lists.push(posting.positions);
       }
-      if (!missing && positionsContainPhrase(lists)) return true;
+      if (!missing && positionsContainPhrase(lists, phrase)) return true;
     }
     return false;
   }
@@ -307,11 +306,12 @@ export class SegmentSearchEngine implements SearchCore {
     const candidateIds = new Set<string>();
 
     const queryTerms = [...new Set(Object.values(expandedTerms).flat())];
+    const phraseTerms = parsed.phrases.flatMap(phrase => phrase.map(token => token.term));
     if (queryTerms.length === 0 && parsed.phrases.length === 0) {
       for (const id of Object.keys(this.segment.documents)) candidateIds.add(id);
     } else {
       for (const fieldTerms of Object.values(this.segment.postings)) {
-        for (const term of [...queryTerms, ...parsed.phrases.flat()]) {
+        for (const term of new Set([...queryTerms, ...phraseTerms])) {
           for (const posting of fieldTerms[term]?.postings ?? []) candidateIds.add(posting.documentId);
         }
       }
@@ -320,10 +320,10 @@ export class SegmentSearchEngine implements SearchCore {
     // Build lookups only for terms used by this query, avoiding a linear postings
     // scan for every candidate document and BM25/phrase component.
     const postingLookup = new Map<TermPostings, Map<string, TermPostings["postings"][number]>>();
-    const requiredTerms = new Set([...queryTerms, ...parsed.phrases.flat()]);
+    const requiredTerms = new Set([...queryTerms, ...phraseTerms]);
     for (const fieldTerms of Object.values(this.segment.postings)) {
       for (const term of requiredTerms) {
-        const termPostings = fieldTerms[term];
+        const termPostings = Object.hasOwn(fieldTerms, term) ? fieldTerms[term] : undefined;
         if (termPostings && !postingLookup.has(termPostings)) {
           postingLookup.set(termPostings, new Map(termPostings.postings.map((posting) => [posting.documentId, posting])));
         }
@@ -331,7 +331,7 @@ export class SegmentSearchEngine implements SearchCore {
     }
 
     const scores = new Map<string, number>();
-    const components: Record<string, Record<string, number>> = {};
+    const components: Record<string, Record<string, number>> = Object.create(null);
     const matchedPhrases: string[] = [];
     const filtered = [...candidateIds].filter((id) => matchesFilters(this.segment.documents[id]!, request.filters));
 
@@ -354,8 +354,9 @@ export class SegmentSearchEngine implements SearchCore {
         if (this.phraseMatch(id, phrase, postingLookup)) {
           const phraseBoost = 2;
           score += phraseBoost;
-          const key = phrase.join(" ");
-          components[id]![`phrase:${key}`] = phraseBoost;
+          const key = phrase.map(token => token.term).join(" ");
+          const component = `phrase:${key}`;
+          components[id]![component] = (components[id]![component] ?? 0) + phraseBoost;
           if (!matchedPhrases.includes(key)) matchedPhrases.push(key);
         } else {
           score = 0;
@@ -383,15 +384,15 @@ export class SegmentSearchEngine implements SearchCore {
       ranked.sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
     }
 
-    const facets: Record<string, Record<string, number>> = {};
+    const facets: Record<string, Record<string, number>> = Object.create(null);
     for (const facet of request.facets ?? []) {
-      const counts: Record<string, number> = {};
+      const counts: Record<string, number> = Object.create(null);
       for (const entry of ranked) {
         const value = getField(entry.document, facet);
         const values = Array.isArray(value) ? value : [value];
-        for (const item of values) {
-          if (item === undefined || item === null || typeof item === "object") continue;
-          const key = String(item);
+        const keys = new Set(values.filter(item =>
+          typeof item === "string" || typeof item === "number" || typeof item === "boolean").map(String));
+        for (const key of keys) {
           counts[key] = (counts[key] ?? 0) + 1;
         }
       }
@@ -412,7 +413,7 @@ export class SegmentSearchEngine implements SearchCore {
       id: entry.id,
       score: entry.score,
       document: entry.document,
-      highlights: highlightRanges(entry.document, [...queryTerms, ...parsed.phrases.flat()], this.analyzer),
+      highlights: highlightRanges(entry.document, [...queryTerms, ...phraseTerms], this.analyzer),
       ...(request.debug ? { explanation: components[entry.id] } : {})
     }));
     const nextOffset = offset + hits.length;

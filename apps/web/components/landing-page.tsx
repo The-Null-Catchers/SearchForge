@@ -4,6 +4,8 @@ import Link from "next/link";
 import { ArrowUpRight, Braces, Database, Globe2, Layers3, ShieldCheck, Sparkles } from "lucide-react";
 import { useLocale } from "./locale-context";
 
+const docs = "https://github.com/The-Null-Catchers/SearchForge/blob/main/docs";
+
 export function LandingPage() {
   const { locale, setLocale, t } = useLocale();
   const features = [
@@ -18,11 +20,12 @@ export function LandingPage() {
   return (
     <main className="landing-shell">
       <header className="landing-header">
-        <Link href="/" className="brand" aria-label="SearchForge home">
+        <Link href="/" className="brand" aria-label={t("SearchForge home")}>
           <span className="brand-mark"><Sparkles size={17} /></span>
           <span>SearchForge</span>
         </Link>
-        <nav className="landing-actions" aria-label="Main navigation">
+        <nav className="landing-actions" aria-label={t("Main navigation")}>
+          <a className="btn" href={`${docs}/development.md`}>{t("Documentation")}</a>
           <button className="btn" type="button" onClick={() => setLocale(locale === "en" ? "ar" : "en")} aria-label={t("Switch language")}>
             {locale === "en" ? "العربية" : "English"}
           </button>
@@ -37,21 +40,20 @@ export function LandingPage() {
           <p>{t("Self-hosted bilingual search with crawling, a custom inverted index, BM25 ranking, typo tolerance, and immutable index releases.")}</p>
           <div className="landing-cta">
             <Link className="btn primary" href="/login">{t("Explore the workspace")} <ArrowUpRight size={16} /></Link>
-            <a className="btn" href="https://github.com/The-Null-Catchers/SearchForge/blob/main/docs/architecture.md" target="_blank" rel="noreferrer">{t("Read the architecture")}</a>
+            <a className="btn" href={`${docs}/playground-demo.md`}>{t("Run the bilingual demo")}</a>
           </div>
-          <div className="landing-stack" aria-label="Technology stack">
+          <div className="landing-stack" aria-label={t("Technology stack")}>
             {["TypeScript", "Next.js", "Fastify", "PostgreSQL", "Redis", "BM25"].map(item => <span key={item}>{item}</span>)}
           </div>
         </div>
 
-        <aside className="landing-console" aria-label="Search API example">
+        <aside className="landing-console" aria-label={t("Search API example")}>
           <div className="landing-console-head">
             <span className="landing-dots"><i /><i /><i /></span>
-            <span className="muted mono">POST /v1/indexes/docs/search</span>
-            <span className="badge">REST API</span>
+            <bdi className="muted mono" dir="ltr">POST /v1/indexes/docs/search</bdi>
           </div>
           <div className="landing-console-body">
-            <div className="eyebrow">{t("Search response")}</div>
+            <div className="eyebrow">{t("Example request body")}</div>
             <pre dir="ltr"><code>{JSON.stringify({
               query: "محرك البحث",
               facets: ["metadata.category"],
@@ -67,10 +69,7 @@ export function LandingPage() {
       </section>
 
       <section className="landing-section" id="capabilities">
-        <div className="landing-section-heading">
-          <div className="eyebrow">{t("Built for engineers who need control")}</div>
-          <h2>{t("Your search stack. Your data. Your rules.")}</h2>
-        </div>
+        <div className="landing-section-heading"><h2>{t("Search for documentation, knowledge bases, and product catalogs")}</h2></div>
         <div className="landing-features">
           {features.map(({ icon: Icon, title, body }) => (
             <article className="landing-feature card" key={title}>
@@ -86,14 +85,14 @@ export function LandingPage() {
         <div>
           <div className="eyebrow">{t("From URL to ranked result")}</div>
           <h2>{t("One engine. Multiple ways to integrate.")}</h2>
-          <p className="muted">{t("Operational visibility")}: {t("Health endpoints, Prometheus metrics, OpenTelemetry traces, durable jobs, and recovery tooling.")}</p>
+          <p className="muted">{t("The crawler and ingest API feed a durable queue. Workers publish immutable index segments, and Fastify serves searches from the active version.")}</p>
+          <a className="btn" href={`${docs}/architecture.md`}>{t("Read the architecture")}</a>
         </div>
         <div className="pipeline" aria-label={t("Indexing pipeline")}>
           {[t("Crawler"), t("Analyzer"), t("Inverted index"), t("BM25 ranking"), t("REST and SDKs")].map((step, index) => (
             <div className="pipeline-step" key={step}>
-              <span className="mono">{String(index + 1).padStart(2, "0")}</span>
               <strong>{step}</strong>
-              {index < 4 && <span className="pipeline-arrow">→</span>}
+              {index < 4 && <span className="pipeline-arrow" aria-hidden="true">{locale === "ar" ? "←" : "→"}</span>}
             </div>
           ))}
         </div>
@@ -101,8 +100,8 @@ export function LandingPage() {
 
       <footer className="landing-footer">
         <span>SearchForge</span>
-        <span className="muted">Self-hosted · Arabic + English · Built for developers</span>
-        <Link href="/login">{t("Sign in")}</Link>
+        <a href={`${docs}/sdk.md`}>{t("SDK documentation")}</a>
+        <a href={`${docs}/CASE_STUDY.md`}>{t("Engineering case study")}</a>
       </footer>
     </main>
   );

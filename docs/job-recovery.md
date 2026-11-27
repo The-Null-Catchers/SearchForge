@@ -38,4 +38,4 @@ The normal durable dispatcher then delivers the retry. A Redis outage during the
 
 Retry depends on the durable outbox entry still existing. Terminal outbox rows are currently retained for seven days by the bounded retention process. Once that metadata is purged, the historical failed job remains visible but is reported as non-retryable through this endpoint.
 
-This operator retry path covers terminal crawl/index jobs. Processor fencing for replaying ambiguous `running` jobs after worker loss and durable per-page deferred crawl retries remain separate reliability work.
+This operator retry path covers terminal crawl/index jobs. For heartbeat and processor fencing after worker loss, see [running job recovery](running-job-recovery.md). See [crawl retries](crawl-retries.md) for persisted per-page Retry-After delays.

@@ -17,6 +17,6 @@
     "bullmq": "^5.58.5",
     "ioredis": "^5.7.0",
     "@searchforge/db": "workspace:*",
-    "drizzle-orm": "^0.44.5"
+    "drizzle-orm": "^0.45.2"
   }
 }

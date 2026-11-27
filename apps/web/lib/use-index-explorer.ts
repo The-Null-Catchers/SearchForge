@@ -17,6 +17,7 @@ export function useIndexExplorer(projectId: string | null) {
   const [status, setStatus] = useState("live");
   const [after, setAfter] = useState("");
   const [revision, setRevision] = useState(0);
+  const [catalogRevision, setCatalogRevision] = useState(0);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -33,12 +34,12 @@ export function useIndexExplorer(projectId: string | null) {
       .then(result => { if (!controller.signal.aborted) { setIndexes(result.indexes); setIndexId(result.indexes[0]?.id ?? ""); setLoading(false); } })
       .catch(err => { if (!controller.signal.aborted) { setError(err.message); setLoading(false); } });
     return () => controller.abort();
-  }, [projectId]);
+  }, [projectId, catalogRevision]);
 
   useEffect(() => {
     const controller = new AbortController();
     setDetail(null); setPage({ documents: [], nextAfter: null });
-    if (!indexId) { setVersions([]); setLoading(false); return; }
+    if (!indexId) { setVersions([]); return; }
     setLoading(true);
     const params = new URLSearchParams({ q, status, limit: "30", ...(after ? { after } : {}) });
     void Promise.all([
@@ -117,6 +118,11 @@ export function useIndexExplorer(projectId: string | null) {
     finally { if (scope === activeScope.current) setBusy(false); }
   };
   return { indexes, indexId, versions, page, detail, job, loading, busy, error, status,
+    reload: () => {
+      setError("");
+      if (indexId) setRevision(value => value + 1);
+      else setCatalogRevision(value => value + 1);
+    },
     selectIndex: (id: string) => { setIndexId(id); setAfter(""); setDetail(null); setJob(null); setBusy(false); },
     filter: (query: string, nextStatus: string) => { setQ(query); setStatus(nextStatus); setAfter(""); },
     next: () => setAfter(page.nextAfter ?? ""), first: () => setAfter(""), inspect, save,

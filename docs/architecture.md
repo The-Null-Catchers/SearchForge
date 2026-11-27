@@ -8,7 +8,7 @@ PostgreSQL owns durable product metadata: identities, organizations, memberships
 
 ## Retrieval plane
 
-`@searchforge/search-core` is independently testable. Documents are analyzed into field-scoped terms and immutable segments. New builds write a new version, validate it, then atomically update the active version pointer. Existing readers continue using the previous immutable version until their request finishes.
+`@searchforge/search-core` is independently testable. Documents are analyzed into field-scoped terms and immutable segments. New builds write a new version, validate it, then atomically update the active version pointer. Search resolves the active pointer and version in one database statement. Existing readers can finish using the previous immutable version after activation.
 
 ```mermaid
 sequenceDiagram
@@ -17,7 +17,8 @@ sequenceDiagram
   participant W as Worker
   participant S as Segment Store
   participant P as PostgreSQL
-  A->>Q: enqueue index build
+  A->>P: commit document mutation and outbox job
+  P-->>Q: dispatcher delivers durable job
   W->>Q: claim idempotent job
   W->>S: write immutable segments
   W->>P: create READY version

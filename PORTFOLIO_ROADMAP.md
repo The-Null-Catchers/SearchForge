@@ -15,11 +15,11 @@ The repository already implements TypeScript lexical retrieval with Arabic/Engli
 | P0 | Playground autocomplete, facet actions, highlights, language/published filters | Merged in #78 | Chromium E2E and API helper tests passed |
 | P0 | Reproducible bilingual corpus, typo, synonym, edit and rollback | Already implemented | Existing browser E2E and fixtures |
 | P0 | CI build, unit, integration, Dart and container smoke | Passed on #80 final head | [#80 successful CI](https://github.com/The-Null-Catchers/SearchForge/actions/runs/44814633377) |
-| P0 | Real screenshots from the final running revision | Pending | Capture under docs/images/portfolio |
-| P0 | Final environment-specific load and restore evidence | Pending | docs/release-evidence.md |
+| P0 | Genuine screenshots and recording | Captured | [Gallery and runtime receipt](docs/images/portfolio/) |
+| P0 | Native load and disposable Docker restore | Measured | [Portfolio evidence](docs/evidence/) |
 | P1 | Relevance judgments and comparative ranking evaluation | Merged in #79 | [#79 successful CI](https://github.com/The-Null-Catchers/SearchForge/actions/runs/44809952170); `node scripts/evaluate-relevance.mjs` after `pnpm build` |
 | P1 | Query-scoped postings lookup and correct phrase explanations | Merged in #80 | [#80 successful CI](https://github.com/The-Null-Catchers/SearchForge/actions/runs/44814633377); performance comparison still pending |
-| P1 | Full Arabic localization of secondary management screens | Pending | RTL browser assertions |
+| P1 | Arabic coverage of secondary management screens | Implemented for principal controls | RTL browser assertions; raw diagnostic text remains source language |
 | P1 | License and contributor attribution review | Pending approval | No SDK publication or release |
 | P2 | Sharding, hybrid/vector retrieval and SDK publication | Out of current milestone | Separate design review |
 
@@ -42,15 +42,19 @@ The repository already implements TypeScript lexical retrieval with Arabic/Engli
 - [PR #80](https://github.com/The-Null-Catchers/SearchForge/pull/80) merged as `9cf35fb17983f429f1c2bab4fd8e9bd11245e081` (query-scoped postings lookups and explain correctness). All four CI jobs passed on its PR head `9734afe6e75ede3134858dafeb3f2b0f8b7c426e`.
 - Passing CI demonstrates functional regression coverage, **not** a quantified speedup or target VPS readiness. CI artifacts are ephemeral; preserve final-run artifacts before they expire.
 
-## November 25 engineering pass
+## November 27 engineering pass
 
-- Baseline main `00cf674fff8f8456b9f2f962e793c49951d44d85`: all four CI jobs passed; actual eight-document disposable search and restore measurements are preserved in [portfolio baseline](docs/portfolio-baseline.md).
-- Project overview: separate project-keyed loading/error/data state, cancellation, retry and a browser regression for switching during an outstanding request. New branch CI must pass before marking this complete.
-- Browser evidence: distinct Arabic and BM25 captures, populated overview and analytics, masked secrets, and measured import/edit/rollback lifecycle durations. Final captures and CI evidence remain pending verification.
-- Existing Arabic Usage localization draft [#85](https://github.com/The-Null-Catchers/SearchForge/pull/85) remains separate and unmerged.
+The protected `main` baseline was `b3f6d31e93004e523921db73fc24dd6baafc8c0b`. PRs #85 and #86 were merged and all four jobs passed in [CI run 46001082045](https://github.com/The-Null-Catchers/SearchForge/actions/runs/46001082045). No pull requests were open when the review began.
 
-## Outstanding release evidence
+| Priority | Finding | Implemented response |
+| --- | --- | --- |
+| P0 | A pointer read could span an activation and see a retired version | Read pointer and version together |
+| P0 | The Playground could display results from a supplied key for another project | Verify the selected project before returning key-scoped results or suggestions |
+| P0 | Selected project changes could expose old key or management state | Scope affected dashboard views and cancel obsolete read requests |
+| P1 | Quoted phrases with stop words and repeated phrase explanations were inconsistent | Preserve analyzed positions and aggregate repeated score components |
+| P1 | Array facets could count a repeated label more than once | Count documents per label |
+| P1 | Secondary screens contained untranslated controls and some mobile grids overflowed | Localize management and account forms and make analytics grids fit narrow screens |
+| P1 | CI evidence lacked source attribution and timings for key recovery operations | Record source SHA, environment, segment bytes and stage durations |
+| P2 | Release obligations and target deployment performance remain open | Track them in the [release checklist](docs/release-checklist.md) |
 
-The existing CI runs a disposable load/recovery rehearsal and uploads artifacts. The target VPS has not been authorized or measured in this portfolio pass. A real target backup and isolated restore are still required before publishing deployment-specific claims. Screenshot files must come from a running application, not design mockups.
-
-See [case study](docs/CASE_STUDY.md), [playground demo](docs/playground-demo.md), [status](docs/status.md), [release evidence](docs/release-evidence.md), and [browser E2E](docs/browser-e2e.md).
+See [implementation status](docs/status.md), [release evidence](docs/release-evidence.md), and [browser E2E](docs/browser-e2e.md).
