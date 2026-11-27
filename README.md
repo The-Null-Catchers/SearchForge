@@ -1,150 +1,93 @@
 # SearchForge
 
-**Self-hosted bilingual search infrastructure for developers.** Crawl and ingest documents, query Arabic and English content, and inspect explainable BM25 ranking from a tenant-scoped dashboard.
+SearchForge is a self-hosted lexical search platform for developers building documentation search, knowledge bases, and product catalogs in Arabic and English. It ingests websites and structured documents, ranks results with its own TypeScript inverted index and BM25 implementation, and exposes the ranking breakdown in a project-scoped dashboard.
 
-**Who it is for:** application developers, documentation teams and engineers who need inspectable lexical search without depending on a hosted search vendor. SearchForge is a portfolio engineering system, not a claimed production-certified service.
+[Get started](#quick-start) · [Run the demo](docs/playground-demo.md) · [Engineering case study](docs/CASE_STUDY.md) · [SDKs](docs/sdk.md) · [Evidence](docs/release-evidence.md) · [Changelog](CHANGELOG.md)
 
-[Engineering case study](docs/CASE_STUDY.md) · [Portfolio roadmap](PORTFOLIO_ROADMAP.md) · [Demo walkthrough](docs/playground-demo.md) · [Relevance evaluation](docs/relevance-evaluation.md) · [Release evidence](docs/release-evidence.md) · [Measured CI baseline](docs/portfolio-baseline.md)
+## Capabilities
 
-
-SearchForge is a developer-focused search platform that **crawls, analyzes, indexes, ranks, and searches content**. It is deliberately not a CRUD wrapper around a hosted search vendor: the repository contains its own language analyzers, inverted index, BM25 scorer, prefix/typo candidate generation, immutable index version model, crawler safety layer, job pipeline, SDKs, and observability.
-
-```text
-Website / Documents
-        ↓
-      Crawler
-        ↓
-     Extractor
-        ↓
-     Analyzer
-        ↓
-    Index Builder
-        ↓
-  Search Engine
-        ↓
- REST / SDK / UI
-```
+- **Ingestion** via a robots-aware crawler, sitemaps, scheduled recrawls, and authenticated document batches.
+- **Bilingual retrieval** with language analysis, positional phrases, prefix expansion, typo tolerance, synonyms, autocomplete, filters, facets and highlighting.
+- **Explainable ranking** with per-field BM25 contributions, phrase boosts, processing latency and the active index version.
+- **Versioned indexes** built as immutable segments with atomic activation and rollback.
+- **Project controls** for organization roles, scoped API keys, quota limits, privacy-thresholded analytics, and audits.
+- **Operations** with Docker Compose, Prometheus metrics, OpenTelemetry traces, durable jobs, and verified backup tooling.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-  WEB[Next.js Dashboard] --> API[Fastify API]
-  SDK[JS / Flutter SDKs] --> API
-  API --> PG[(PostgreSQL)]
-  API --> REDIS[(Redis)]
-  API --> CORE[Search Core]
-  CRAWL[Crawler] --> REDIS
-  REDIS --> WORKER[Workers]
-  WORKER --> CORE
-  WORKER --> OBJ[(S3 / MinIO)]
-  CORE --> SEG[(Immutable Segments)]
-  PROM[Prometheus] --> API
-  PROM --> CRAWL
+  Browser["Next.js dashboard"] --> API["Fastify API"]
+  SDK["JavaScript and Dart SDKs"] --> API
+  API --> PG[("PostgreSQL: documents, tenants, outbox, active pointer")]
+  API --> Engine["TypeScript analyzers and BM25"]
+  Dispatcher["Durable dispatcher"] --> PG
+  Dispatcher --> Queue["Redis / BullMQ"]
+  Queue --> Crawler["Crawler"]
+  Queue --> Indexer["Indexer"]
+  Crawler --> PG
+  Indexer --> PG
+  Indexer --> Segments[("Immutable filesystem segments")]
+  Engine --> Segments
+  API --> Monitoring["Prometheus / OpenTelemetry"]
 ```
 
-## What is implemented
-
-- Multi-tenant data model for users, organizations, projects, memberships, sources, indexes, versions, jobs, API keys, analytics, and audit logs.
-- Secure auth primitives: Argon2id passwords, refresh-token rotation/reuse detection model, verification/reset tokens, rate-limit hooks.
-- Website crawler primitives with robots.txt, sitemap parsing, URL normalization, redirect checks, size/content-type limits, SSRF/private-network protection, and content deduplication.
-- English + Arabic analyzers, configurable Arabic normalization, light stemming, field-aware inverted index, positional postings, BM25, phrase matching, prefix search, typo-aware term expansion, filters, facets, safe highlight ranges, autocomplete, and explain output.
-- BullMQ queues for crawl/fetch/extract/normalize/index/merge/analytics/cleanup.
-- Atomic index-version activation and rollback semantics in metadata.
-- REST API, JavaScript SDK, Dart SDK, dashboard, health/readiness, Prometheus metrics, structured errors, request IDs, Docker Compose, and CI.
+See [architecture](docs/architecture.md) and the [case study](docs/CASE_STUDY.md) for the indexing, retrieval and recovery design.
 
 ## Quick start
 
+Run from a clean checkout with Docker Engine and Compose.
+
 ```bash
 cp .env.example .env
-docker compose up --build
+docker compose up -d --build --wait
+docker compose exec -T api node apps/api/dist/seed.js
 ```
 
-The one-shot migration service applies checked-in SQL before the API and workers
-start. Open `http://localhost` through Caddy; browser API requests use the same
-origin. Register, create an organization and project, then add a website or use
-a private indexing key to push documents. Keep returned API keys somewhere safe;
-plaintext keys are returned only once.
+The `migrate` service applies the checked-in SQL before the API and workers start. Open `http://localhost` and use the synthetic account described in [demo seed](docs/demo-seed.md). Follow the [bilingual walkthrough](docs/playground-demo.md) to import the eight documents and demonstrate tenant isolation, key scopes, ranking, synonyms, activation, rollback and analytics.
 
-Add metrics and dashboards with:
+Use [.env.example](.env.example) for configuration. Keep deployment credentials private, configure HTTPS and SMTP, and follow the [deployment guide](docs/deployment.md). For host development with Node.js 22 and pnpm 10.15.1, see [development](docs/development.md). Add the optional metrics stack with `docker compose --profile observability up -d`.
+
+## Search API and SDKs
+
+Run this with a search-only key for the project whose `docs` index is active.
 
 ```bash
-docker compose --profile observability up --build
+curl --fail-with-body http://localhost/v1/indexes/docs/search \
+  -H "Authorization: Bearer $SEARCHFORGE_SEARCH_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"محرك بحث","filters":{"language":"ar"},"facets":["metadata.category"],"debug":true}'
 ```
 
-MinIO console: `http://localhost:9001`  
-Grafana: `http://localhost:3001`
-
-For host-based development, publish PostgreSQL and Redis using the development
-override described in [docs/development.md](docs/development.md), then build,
-migrate and run the apps. See [docs/deployment.md](docs/deployment.md) before
-configuring a VPS.
-
-## Search request
-
-```http
-POST /v1/indexes/docs/search
-Authorization: Bearer sf_search_...
-Content-Type: application/json
-
-{
-  "query": "distributed systems",
-  "filters": {"category": "docs"},
-  "facets": ["category"],
-  "limit": 20
-}
+```ts
+import { SearchForge } from "@searchforge/sdk";
+const search = new SearchForge({
+  projectId, apiKey, baseUrl: "http://localhost", indexSlug: "docs"
+});
+const result = await search.search("distributed systems", { facets: ["metadata.category"] });
 ```
 
-## Demonstration and screenshots
+The [SDK guide](docs/sdk.md) includes JavaScript/TypeScript and Dart/Flutter install, query, autocomplete, pagination and error-handling examples. Both packages can be used from the workspace.
 
-The local demo uses eight synthetic Arabic, English and mixed-language documents. Follow [the repeatable Search Playground walkthrough](docs/playground-demo.md) for search, typo tolerance, synonyms, immutable index rebuild and rollback. Existing Chromium tests capture genuine screenshots as CI artifacts; final curated screenshots under `docs/images/portfolio/` are pending capture from the final running revision.
+## Verification and evidence
 
-## Testing
+```bash
+pnpm install --frozen-lockfile
+pnpm build
+pnpm test
+pnpm typecheck
+node scripts/evaluate-relevance.mjs
+node --test tests/load/*.test.mjs
+```
 
-With Node 22 and pnpm 10.15.1, run `pnpm install --frozen-lockfile`, `pnpm build`, `pnpm test`, and `pnpm typecheck`. Database integration requires PostgreSQL 17 and Redis 7; see [development](docs/development.md) and [CI](.github/workflows/ci.yml). Dart SDK validation uses `dart analyze --fatal-infos` and `dart test` in `packages/sdk-flutter`. Docker Compose CI exercises Chromium browser E2E and disposable backup/restore checks.
+The [integration setup](docs/development.md) and [CI workflow](.github/workflows/ci.yml) cover migrations, PostgreSQL/Redis/SMTP integration, Dart analysis and tests, security baseline, Compose, Chromium, and isolated restore. See the [browser guide](docs/browser-e2e.md) for the real seeded walkthrough and its captures.
 
-## Offline relevance evaluation
+The [historical CI baseline](docs/portfolio-baseline.md) records 120 successful search requests across a small eight-document synthetic corpus. See [benchmarking](docs/benchmarking.md) and [release evidence](docs/release-evidence.md) for reproducible workloads, recovery checks and environment limits.
 
-After `pnpm install --frozen-lockfile && pnpm build`, run `node scripts/evaluate-relevance.mjs` to evaluate seven graded Arabic/English queries against the eight-document synthetic corpus. The script reports Precision@5, Recall@5, MRR@5 and nDCG@5 for typo expansion on and off. This is a deterministic correctness regression fixture, not production search-quality or latency evidence.
+## Security and limitations
 
-## Known limitations
+Authentication uses Argon2id, short-lived access tokens, and refresh-token family rotation. The API scopes keys to projects and stores keyed digests. The crawler validates DNS, pins destinations, blocks unsafe addresses, and checks redirects. See [security](docs/security.md) and [backup and restore](docs/backup-restore.md).
 
-The engine is lexical rather than vector-based; Arabic stemming is lightweight; SDKs are not published; the initial topology is not sharded. Some secondary dashboard screens remain English-only. Representative VPS latency and recovery measurements, portfolio screenshots from the final SHA, and license/contributor review remain pending. See [case study](docs/CASE_STUDY.md).
+SearchForge uses single-node lexical retrieval and lightweight stemming. Raw developer diagnostics can retain their source language. The demo corpus checks functional behavior and the larger synthetic corpus repeats those documents to exercise postings and request concurrency. Production capacity, SLOs and recovery objectives require measurements on the intended deployment. SDK publication and the repository license and attribution review are tracked in the [release checklist](docs/release-checklist.md).
 
-## Engineering targets
-
-Targets are intentionally not published as achieved benchmarks. Use `tests/load` against your own hardware and dataset and publish p50/p95/p99 with corpus size, index size, CPU/RAM, and concurrency.
-
-- low-millisecond autocomplete from a hot cache
-- sub-100 ms typical lexical search on moderate indexes
-- bounded per-domain crawl concurrency
-- zero-downtime index activation
-
-## Security defaults
-
-Crawler access to loopback, link-local, RFC1918, IPv6 local/private ranges, credential-bearing URLs, non-HTTP schemes, and unsafe redirects is denied by default. API keys are represented by a visible prefix plus a one-way digest; plaintext secrets are returned once only.
-
-See [docs/security.md](docs/security.md) and [docs/architecture.md](docs/architecture.md).
-
-## Roadmap
-
-MVP focuses on lexical retrieval. The core exposes boundaries for sharding, replica selection, vector stores, hybrid fusion, external source connectors, and ranking experiments without making them mandatory.
-
-## SDKs and demo corpus
-
-Try Arabic search, category filters, typo tolerance, and BM25 explanations with the [Search Playground demo](docs/playground-demo.md).
-
-See [SDK usage](docs/sdk.md), [demo and benchmarks](docs/benchmarking.md) and
-[implementation status](docs/status.md). SDK packages are not published yet.
-
-Job delivery, scheduled recrawls and cancellation: [job lifecycle](docs/job-lifecycle.md).
-
-Inspecting stored content and crawl results: [explorers](docs/explorers.md).
-
-Permanent index removal and retry semantics: [safe index deletion](docs/index-deletion.md).
-
-Source erasure and retained version fencing: [safe source deletion](docs/source-deletion.md).
-
-## Portfolio roadmap
-
-See the [repository-specific portfolio roadmap](PORTFOLIO_ROADMAP.md) for priorities, acceptance criteria, demo scope, and release evidence. This complements the existing implementation and status documentation.
+[Portfolio roadmap](PORTFOLIO_ROADMAP.md) · [Implementation status](docs/status.md)

@@ -16,7 +16,10 @@ The current release smoke verifies:
 - the Analytics navigation route loads and exposes its time-window control
 - an authenticated nested dashboard route survives a full browser reload
 - project switching hides old overview metrics while a delayed real request is pending, including after a simulated network failure and successful retry
-- bilingual search, highlighting, BM25, typo expansion, synonyms, document editing, activation and rollback
+- Arabic and mixed-language search, keyboard autocomplete, category and language facets, unpublished filtering, highlighting, BM25 and document inspection
+- a search-only key denied document ingestion and a Docs Search key denied while Product Catalog is selected
+- synonyms, document editing, activation and rollback
+- Analytics fits a 390 px viewport in both Arabic and English
 - the Usage screen cancels stale quota requests during project switching, keeps the selected tenant's metrics after a delayed response, and respects viewer read-only permissions
 - Arabic quota labels and number formatting render correctly in RTL
 - unexpected page-level JavaScript exceptions fail the job
@@ -39,7 +42,9 @@ With the Compose stack running and seeded, create an artifact directory and run 
 
 ```bash
 mkdir -p artifacts/browser-e2e
+export SEARCHFORGE_E2E_SOURCE_SHA="$(git rev-parse HEAD)"
 docker run --rm --network host \
+  -e SEARCHFORGE_E2E_SOURCE_SHA \
   -e SEARCHFORGE_E2E_BASE_URL=http://127.0.0.1 \
   -e SEARCHFORGE_E2E_ARTIFACTS=/artifacts/browser-e2e \
   -v "$PWD/tests/browser:/tests:ro" \
@@ -50,3 +55,5 @@ docker run --rm --network host \
 ```
 
 This is release smoke coverage, not a claim that every dashboard branch is browser-tested. Deeper destructive flows remain better covered by API/integration tests unless they need explicit browser evidence.
+
+For desktop recording, set `SEARCHFORGE_E2E_VIDEO_DIR=/artifacts/portfolio-video` in the browser container and precreate the mounted output directory. This adds time to inspect selected screens and writes a WebM recording. See [the recording guide](portfolio-recording.md).

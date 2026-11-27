@@ -149,7 +149,7 @@ See docs/browser-e2e.md.
 - A manual GitHub Actions release workflow captures independent HTTPS load evidence with corpus metadata and runner hardware context.
 - A VPS collector combines load evidence with isolated restore rehearsal output and SHA-256 checksums.
 
-See docs/load-testing.md and docs/release-evidence.md. Actual performance numbers remain intentionally unpublished until a representative deployed corpus and hardware profile are measured.
+See docs/load-testing.md and docs/release-evidence.md. Historical small synthetic measurements are published in [portfolio baseline](portfolio-baseline.md). Deployment-specific measurements remain open.
 
 ## Recent search-core completion
 
@@ -170,7 +170,6 @@ See docs/load-testing.md and docs/release-evidence.md. Actual performance number
 - Portfolio UI and bilingual playground merged via [#78](https://github.com/The-Null-Catchers/SearchForge/pull/78).
 - Synthetic bilingual relevance judgments and executable evaluator merged via [#79](https://github.com/The-Null-Catchers/SearchForge/pull/79); metrics are regression evidence, not production-quality claims.
 - Query-scoped posting lookup optimization and phrase-explanation correctness merged via [#80](https://github.com/The-Null-Catchers/SearchForge/pull/80). Its final-head CI passed Node, Dart, security and Compose/Chromium jobs. Quantified before/after performance evidence remains pending.
-- Curated genuine screenshots and target-environment restore/load validation are still pending.
 
 ## Remaining before MVP release evidence is complete
 
@@ -187,3 +186,10 @@ No performance numbers are claimed without a measured corpus and hardware profil
 Owner-only project deletion fences all project writes, revokes keys, drains source/index processors, removes immutable index storage and project-owned data, and retains only a scrubbed tombstone, durable cleanup receipt and security audit trail. See [project deletion](project-deletion.md).
 
 Confirmed, admin-only index deletion fences writes and drains builders before file/metadata erasure. Source deletion fences crawling, queues replacement builds, prevents rollback resurrection and purges obsolete segment files while preserving other documents. See [index deletion](index-deletion.md). PostgreSQL/Redis scenarios verify producer draining, storage failure/retry, delivery recovery and retained-segment inspection in CI.
+
+## Portfolio completion branch
+
+- Search resolves version metadata from one snapshot. Phrase verification retains positional gaps from removed stop words, and facet counts represent unique matching documents per value.
+- The Playground supplies the selected project as an additional constraint on its search and autocomplete API key. Public SDK calls continue to derive tenant scope from the key alone.
+- Analytics, Indexes, Sources, Settings, API Key controls and account forms expose Arabic translations for their principal controls. User content, protocol names, and arbitrary service messages can retain their original language.
+- The browser flow tests Arabic and mixed-language search, keyboard suggestions, unpublished filtering, wrong-project keys, scope checks, and responsive analytics. See [browser E2E](browser-e2e.md) and the [release checklist](release-checklist.md).

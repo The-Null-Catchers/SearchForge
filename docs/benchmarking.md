@@ -28,3 +28,15 @@ The output includes requests/sec, error rate and latency p50 (med), p95 and p99;
 separate search and autocomplete operation tags when interpreting results.
 Do not hide HTTP 429s; reduce load or explicitly adjust the benchmark quota.
 Indexing and concurrent-crawl throughput benchmarks remain separate release work.
+
+## Repeatable local HTTP scenarios
+
+Start a fresh disposable stack and seed the demo owner as in the [walkthrough](playground-demo.md). Run the committed driver with Node 22.
+
+```bash
+SEARCHFORGE_URL=http://127.0.0.1 node scripts/benchmark-demo.mjs
+```
+
+The driver creates a synthetic organization and separate 8- and 800-document projects. For the larger corpus, each fixture row is repeated 100 times with unique IDs and a numeric title suffix. Each corpus is loaded once and queried at concurrency 1 and 12, with eight warmup and 45 measured requests per scenario. The query mix cycles through JavaScript, distributed systems and two Arabic queries. Run this on a fresh stack to keep unrelated traffic out of the default global rate-limit window.
+
+The driver records the active index size, index job runtime, import-to-completion time including queue/polling, client concurrency and raw request measurements. It includes the source SHA and load client hardware. For containers, also record `docker version`, `docker compose version` and service resource limits. The 800-document corpus stresses common postings and does not model a diverse production vocabulary.

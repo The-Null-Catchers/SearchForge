@@ -28,9 +28,7 @@ must survive container replacement. MinIO is built from the pinned upstream sour
 image is unavailable. Its AGPL license is included in the image. It is provisioned for future raw HTML and
 object storage use; current search segments use the persistent filesystem.
 
-Prometheus stays internal; /metrics is not routed by Caddy. Bind the optional
-Grafana and MinIO console ports to loopback or protect them using network rules
-before exposing the VPS. For monitoring, use the observability Compose profile.
+Prometheus stays internal; /metrics is not routed by Caddy. The MinIO console binds to loopback. Review optional observability ports before deploying. For monitoring, use the observability Compose profile.
 
 ## Backup and restore
 
@@ -44,7 +42,7 @@ Restore metadata into a clean database and segments into a clean index_data
 volume while services are stopped. Restore secrets through your secret manager,
 run migrations, then start services. Verify readiness, an English and an Arabic
 query, and activation/rollback on a nonproduction project before reopening traffic.
-Automated backup scripts and a rehearsed restore test remain release requirements.
+Use the matched-set backup and isolated restore scripts described in [backup and restore](backup-restore.md). The CI rehearsal also verifies the restored active segment and a MinIO object.
 
 ## Release status
 
