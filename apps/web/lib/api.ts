@@ -44,10 +44,12 @@ export async function api<T>(path: string, init: RequestInit = {}, retry = true)
   return response.json() as Promise<T>;
 }
 
-export async function publicSearch<T>(indexSlug: string, apiKey: string, body: unknown): Promise<T> {
+export async function publicSearch<T>(indexSlug: string, apiKey: string, body: unknown, options?: { projectId: string; signal?: AbortSignal }): Promise<T> {
   const response = await fetch(`${API_URL}/v1/indexes/${encodeURIComponent(indexSlug)}/search`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json",
+      ...(options ? { "X-SearchForge-Project-Id": options.projectId } : {}) },
+    ...(options?.signal ? { signal: options.signal } : {}),
     body: JSON.stringify(body)
   });
   if (!response.ok) {
@@ -63,13 +65,14 @@ export async function publicAutocomplete<T>(
   apiKey: string,
   query: string,
   limit = 8,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  projectId?: string
 ): Promise<T> {
   const params = new URLSearchParams({ q: query, limit: String(limit) });
   const response = await fetch(
     `${API_URL}/v1/indexes/${encodeURIComponent(indexSlug)}/autocomplete?${params.toString()}`,
     {
-      headers: { Authorization: `Bearer ${apiKey}` },
+      headers: { Authorization: `Bearer ${apiKey}`, ...(projectId ? { "X-SearchForge-Project-Id": projectId } : {}) },
       signal
     }
   );

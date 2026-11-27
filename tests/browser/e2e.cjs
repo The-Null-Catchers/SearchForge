@@ -46,7 +46,9 @@ async function capture(page, name) {
   await page.screenshot({
     path: path.join(artifactsDir, name),
     fullPage: true,
-    mask: [page.locator('input[type="password"], .secret')]
+    mask: [page.locator('input[type="password"], .secret')],
+    maskColor: "#182234",
+    animations: "disabled"
   });
 }
 
@@ -190,6 +192,10 @@ async function verifySearchPlayground(page) {
   const keysRoute = `/v1/projects/${docs.id}/api-keys`;
   const { key: indexingKey } = await request("POST", keysRoute, accessToken, { name: "Browser fixture import", kind: "indexing" });
   const { key: searchKey } = await request("POST", keysRoute, accessToken, { name: "Browser playground", kind: "search" });
+  const deniedWrite = await page.request.post(`${baseUrl}/v1/indexes/docs/documents/batch`, {
+    headers: { authorization: `Bearer ${searchKey}` }, data: { documents: [] }
+  });
+  assert(deniedWrite.status() === 403, "Search-only key could enter the document ingestion route");
   const documents = JSON.parse(fs.readFileSync(path.join(__dirname, "../fixtures/demo-documents.json"), "utf8"));
   const importStarted = performance.now();
   const batch = await request("POST", "/v1/indexes/docs/documents/batch", indexingKey, { documents });
@@ -225,6 +231,23 @@ async function verifySearchPlayground(page) {
     return response.json();
   }
 
+  const queryInput = page.getByRole("combobox", { name: "Query", exact: true });
+  await queryInput.fill("محرك jav");
+  await page.getByRole("option", { name: /javascript/i }).waitFor();
+  await queryInput.press("ArrowDown");
+  assert(await queryInput.getAttribute("aria-activedescendant"), "Autocomplete did not identify the active option");
+  await queryInput.press("Enter");
+  assert(await queryInput.inputValue() === "محرك javascript", "Autocomplete did not preserve the earlier Arabic term");
+  await page.getByRole("button", { name: "Mixed-language search", exact: true }).click();
+  await page.getByLabel("Language", { exact: true }).selectOption("mixed");
+  const mixed = await search();
+  assert(mixed.hits.length && mixed.hits.every(hit => hit.document.language === "mixed"), "Mixed-language filter returned unexpected hits");
+  await queryInput.fill("");
+  await page.getByLabel("Language", { exact: true }).selectOption("");
+  await page.getByLabel("Published state", { exact: true }).selectOption("false");
+  const unpublished = await search();
+  assert(unpublished.hits.length === 1 && unpublished.hits[0].document.published === false, "Unpublished filter returned unexpected hits");
+
   await page.getByRole("button", { name: "Arabic search", exact: true }).click();
   await page.getByLabel("Category filter").clear();
   const unfiltered = await search();
@@ -236,11 +259,16 @@ async function verifySearchPlayground(page) {
   assert(arabic.hits.some(hit => hit.id === "search-ar") && arabic.hits.every(hit => hit.document.metadata?.category === "docs"), "Arabic category filter returned unexpected documents");
   await arabicHit.waitFor();
   assert(await arabicHit.locator("mark.match-highlight").count() > 0, "Arabic result did not highlight matching terms");
-  assert(!(await arabicHit.locator("details").evaluate(details => details.open)), "BM25 explanation should start collapsed");
+  assert(!(await arabicHit.locator(".result-explanation").evaluate(details => details.open)), "BM25 explanation should start collapsed");
+  await page.getByRole("button", { name: "Switch language", exact: true }).click();
+  await page.getByRole("region", { name: "نتائج البحث" }).waitFor();
+  await page.waitForFunction(() => document.documentElement.dir === "rtl");
   await capture(page, "playground-arabic.png");
-  await arabicHit.getByText(/BM25 score breakdown/).click();
-  assert(await arabicHit.locator("dl dt").first().isVisible(), "Arabic result is missing visible BM25 components");
+  const rtlHit = page.getByRole("article").filter({ has: page.getByRole("heading", { name: "محرك بحث عربي", exact: true }) });
+  await rtlHit.getByText(/تفصيل درجة BM25/).click();
+  assert(await rtlHit.locator("dl dt").first().isVisible(), "Arabic result is missing visible BM25 components");
   await capture(page, "playground-bm25.png");
+  await page.getByRole("button", { name: "تغيير اللغة", exact: true }).click();
 
   await page.getByRole("button", { name: "English typo", exact: true }).click();
   await page.getByLabel("Typo tolerance").uncheck();
@@ -324,10 +352,22 @@ async function verifySearchPlayground(page) {
   await projectSelector.selectOption(labs.id);
   await results.getByText("Run a query to see matching documents.").waitFor();
   assert(await keyInput.inputValue() === "", "The previous project's API key remained in the form");
+  await keyInput.fill(searchKey);
+  await runSearch.click();
+  await page.getByRole("alert").filter({ hasText: "API key belongs to a different project" }).waitFor();
+  assert(await results.getByRole("article").count() === 0, "Results crossed the selected project boundary");
   await projectSelector.selectOption(docs.id);
   await page.getByRole("link", { name: "Analytics", exact: true }).click();
   await page.getByRole("cell", { name: "search api", exact: true }).waitFor({ timeout: 15_000 });
   await capture(page, "dashboard-analytics.png");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("button", { name: "Switch language", exact: true }).click();
+  await page.getByRole("heading", { name: "التحليلات", exact: true }).waitFor();
+  assert(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), "RTL analytics overflows the mobile viewport");
+  await capture(page, "dashboard-analytics-rtl-mobile.png");
+  await page.getByRole("button", { name: "تغيير اللغة", exact: true }).click();
+  assert(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), "LTR analytics overflows the mobile viewport");
+  await page.setViewportSize({ width: 1440, height: 1000 });
   return { indexedDocuments: documents.length, indexVersion: arabic.indexVersion, arabicHits: arabic.hits.map(hit => hit.id), typoTopHit: typo.hits[0].id,
     overviewIsolation: true,
     indexLifecycleMs: { importToJobCompletedMs, editToSearchVisibleMs, rollbackToSearchVisibleMs },
@@ -377,6 +417,7 @@ async function main() {
     await page.getByRole("button", { name: "Toggle theme" }).click();
     const toggledTheme = await page.locator("html").getAttribute("data-theme");
     assert(initialTheme !== toggledTheme, "Theme toggle did not update the document theme");
+    await page.getByRole("button", { name: "Toggle theme" }).click();
 
     await page.keyboard.press("Control+K");
     const palette = page.getByPlaceholder("Navigate SearchForge…");
@@ -400,7 +441,7 @@ async function main() {
     if (pageErrors.length > 0) throw new Error(`Browser page errors: ${pageErrors.join(" | ")}`);
     fs.writeFileSync(path.join(artifactsDir, "result.json"), JSON.stringify({
       status: "passed",
-      gitSha: process.env.GITHUB_SHA || null,
+      gitSha: process.env.SEARCHFORGE_E2E_SOURCE_SHA || process.env.GITHUB_SHA || null,
       url: analyticsUrl,
       projectOptions,
       playground,

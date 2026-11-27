@@ -65,9 +65,9 @@ function InnerShell({ children }: { children: React.ReactNode }) {
           {projects.length === 0 && <option value="">{t("No project selected")}</option>}
           {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
         </select>
-        <nav className="nav">
+        <nav className="nav" aria-label={t("Workspace navigation")}>
           {navigation.map(([href,label,Icon]) => (
-            <Link key={href} href={href} className={pathname === href ? "active" : ""}><Icon size={16}/><span>{t(label)}</span></Link>
+            <Link key={href} href={href} className={pathname === href ? "active" : ""} aria-current={pathname === href ? "page" : undefined}><Icon size={16} aria-hidden="true"/><span>{t(label)}</span></Link>
           ))}
         </nav>
         <div className="sidebar-bottom">
@@ -76,7 +76,7 @@ function InnerShell({ children }: { children: React.ReactNode }) {
       </aside>
       <main className="main">
         <header className="topbar">
-          <div className="muted mono" style={{fontSize:12}}>{projects.find((p) => p.id === projectId)?.slug ?? "workspace"}</div>
+          <div className="muted mono" style={{fontSize:12}}><bdi>{projects.find((p) => p.id === projectId)?.slug ?? t("Workspace")}</bdi></div>
           <div className="topbar-actions">
             <button className="icon-btn locale-btn" onClick={() => setLocale(locale === "en" ? "ar" : "en")} aria-label={t("Switch language")}>{locale === "en" ? "العربية" : "English"}</button>
             <button className="icon-btn" onClick={toggleTheme} aria-label={t("Toggle theme")}>{theme === "dark" ? <Sun size={16}/> : <Moon size={16}/>}</button>
@@ -86,12 +86,12 @@ function InnerShell({ children }: { children: React.ReactNode }) {
       </main>
       {commandOpen && (
         <div className="command-backdrop" onMouseDown={() => setCommandOpen(false)}>
-          <div className="command" onMouseDown={(event) => event.stopPropagation()}>
-            <input autoFocus value={filter} onChange={(event) => setFilter(event.target.value)} placeholder={t("Navigate SearchForge…")} />
+          <div className="command" role="dialog" aria-label={t("Command palette")} onMouseDown={(event) => event.stopPropagation()}>
+            <input autoFocus value={filter} onChange={(event) => setFilter(event.target.value)} aria-label={t("Navigate SearchForge…")} placeholder={t("Navigate SearchForge…")} />
             <div className="command-list">
               {filtered.map(([href,label,Icon]) => (
                 <button key={href} className="command-item" style={{width:"100%",border:0,background:"transparent"}} onClick={() => { router.push(href); setCommandOpen(false); setFilter(""); }}>
-                  <span style={{display:"flex",gap:10,alignItems:"center"}}><Icon size={16}/>{t(label)}</span><span className="muted">Open</span>
+                  <span style={{display:"flex",gap:10,alignItems:"center"}}><Icon size={16}/>{t(label)}</span>
                 </button>
               ))}
             </div>

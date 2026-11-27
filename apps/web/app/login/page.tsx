@@ -1,5 +1,6 @@
 "use client";
 
+import { useLocale } from "../../components/locale-context";
 import Link from "next/link";
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -7,6 +8,7 @@ import { useRouter } from "next/navigation";
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 export default function LoginPage() {
+  const { t, locale, setLocale } = useLocale();
   const router = useRouter();
   const [mode, setMode] = useState<"login"|"register">("login");
   const [error, setError] = useState("");
@@ -29,30 +31,29 @@ export default function LoginPage() {
       })
     });
     const body = await response.json().catch(() => ({})) as { accessToken?: string; error?: { message?: string } };
-    setLoading(false);
     if (!response.ok || !body.accessToken) {
-      setError(body.error?.message ?? "Authentication failed");
+      setError(body.error?.message ?? t("Authentication failed"));
       return;
     }
     sessionStorage.setItem("sf_access_token", body.accessToken);
     router.push("/dashboard");
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : "Unable to sign in. Please try again.");
+      setError(failure instanceof Error ? failure.message : t("Unable to sign in. Please try again."));
     } finally { setLoading(false); }
   };
 
   return (
     <main className="login-shell">
       <form className="card login-card stack" onSubmit={submit}>
-        <div className="brand"><div className="brand-mark">⌁</div>SearchForge</div>
-        <div><div className="eyebrow">Developer search infrastructure</div><h1>{mode === "login" ? "Sign in" : "Create account"}</h1><p className="muted">Crawl, index, rank and inspect search from one workspace.</p></div>
-        {mode === "register" && <div className="field"><label>Name</label><input className="input" name="displayName" required /></div>}
-        <div className="field"><label>Email</label><input className="input" name="email" type="email" required /></div>
-        <div className="field"><label>Password</label><input className="input" name="password" type="password" minLength={10} required /></div>
-        {error && <div style={{color:"var(--danger)",fontSize:13}}>{error}</div>}
-        <button className="btn primary" disabled={loading}>{loading ? "Working…" : mode === "login" ? "Sign in" : "Create account"}</button>
-        {mode === "login" && <Link className="btn" href="/forgot-password">Forgot password?</Link>}
-        <button className="btn" type="button" onClick={() => setMode(mode === "login" ? "register" : "login")}>{mode === "login" ? "Need an account?" : "Already have an account?"}</button>
+        <div className="toolbar"><Link href="/" className="brand"><span className="brand-mark">⌁</span>SearchForge</Link><button className="btn locale-btn" type="button" onClick={() => setLocale(locale === "en" ? "ar" : "en")} aria-label={t("Switch language")}>{locale === "en" ? "العربية" : "English"}</button></div>
+        <div><div className="eyebrow">{t("Developer search infrastructure")}</div><h1>{mode === "login" ? t("Sign in") : t("Create account")}</h1><p className="muted">{t("Crawl, index, rank and inspect search from one workspace.")}</p></div>
+        {mode === "register" && <div className="field"><label htmlFor="login-displayName">{t("Name")}</label><input id="login-displayName" className="input" name="displayName" autoComplete="name" required /></div>}
+        <div className="field"><label htmlFor="login-email">{t("Email")}</label><input id="login-email" className="input" name="email" autoComplete="email" type="email" dir="ltr" required /></div>
+        <div className="field"><label htmlFor="login-password">{t("Password")}</label><input id="login-password" className="input" name="password" autoComplete={mode === "login" ? "current-password" : "new-password"} type="password" dir="ltr" minLength={10} required /></div>
+        {error && <div role="alert" style={{color:"var(--danger)",fontSize:13}}>{t(error)}</div>}
+        <button className="btn primary" disabled={loading}>{loading ? t("Working…") : mode === "login" ? t("Sign in") : t("Create account")}</button>
+        {mode === "login" && <Link className="btn" href="/forgot-password">{t("Forgot password?")}</Link>}
+        <button className="btn" type="button" onClick={() => setMode(mode === "login" ? "register" : "login")}>{mode === "login" ? t("Need an account?") : t("Already have an account?")}</button>
       </form>
     </main>
   );
