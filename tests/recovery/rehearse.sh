@@ -48,8 +48,12 @@ SEARCHFORGE_LOAD_API_KEY="$search_key" \
   SEARCHFORGE_LOAD_MAX_ERROR_RATE=0 SEARCHFORGE_LOAD_OUTPUT="$out/search-load.json" \
   node tests/load/search-load.mjs
 
+backup_start_ms="$(date +%s%3N)"
 scripts/backup.sh "$scratch/backup" | tee "$out/backup.log"
+export BACKUP_DURATION_MS="$(( $(date +%s%3N) - backup_start_ms ))"
+restore_start_ms="$(date +%s%3N)"
 SEARCHFORGE_RESTORE_PRINT_ACTIVE_SEGMENTS=1 scripts/restore-rehearsal.sh "$scratch/backup" | tee "$out/restore.log"
+export RESTORE_DURATION_MS="$(( $(date +%s%3N) - restore_start_ms ))"
 restore_pattern='^\[restore-test\] retained volumes for inspection: (searchforge_restore_index_[0-9]{8}T[0-9]{6}Z-[0-9]+) (searchforge_restore_minio_[0-9]{8}T[0-9]{6}Z-[0-9]+)$'
 restored_volumes="$(grep -E "$restore_pattern" "$out/restore.log")"
 [[ "$restored_volumes" =~ $restore_pattern ]]
@@ -89,6 +93,8 @@ const result = new SegmentSearchEngine(segment).search(request);
 assert(result.hits.some(hit => hit.id === expectedHit), "Restored active segment missed the Arabic fixture");
 console.log(JSON.stringify({ query, expectedHit, indexVersion: result.indexVersion, total: result.total }, null, 2));
 NODE
+export ACTIVE_INDEX_BYTES="$(docker run --rm -v "$restored_index:/data:ro" alpine:3.22 \
+  stat -c '%s' "/data/$active_index_id/$active_sequence.segment.json")"
 
 docker run -d --name "$minio_container" --network searchforge_default \
   -e MINIO_ROOT_USER="$minio_user" -e MINIO_ROOT_PASSWORD="$minio_password" \
@@ -100,6 +106,10 @@ restored_object="$(s3 --retry 8 --retry-delay 1 --retry-connrefused "http://$min
 lscpu > "$out/runner-cpu.txt"
 free -b > "$out/runner-memory.txt"
 docker compose version > "$out/docker-compose.txt"
+docker version > "$out/docker-engine.txt"
+uname -a > "$out/runner-kernel.txt"
+cat /etc/os-release > "$out/runner-os.txt"
+export EVIDENCE_SOURCE_SHA="$(git rev-parse HEAD)"
 node --input-type=module - "$out" <<'NODE'
 import { readFileSync, writeFileSync } from "node:fs";
 const out = process.argv[2];
@@ -109,12 +119,16 @@ const restoredSearch = JSON.parse(readFileSync(`${out}/restored-arabic-search.js
 if (restoredSearch.indexVersion !== browser.playground.rollback.activeVersion) {
   throw new Error("Restored segment version differs from the browser's active version");
 }
+if (browser.gitSha !== process.env.EVIDENCE_SOURCE_SHA) {
+  throw new Error("Browser evidence was captured from a different source SHA");
+}
 writeFileSync(`${out}/summary.json`, JSON.stringify({
   environment: "GitHub-hosted Ubuntu, disposable Docker Compose stack and load client on the same runner",
-  gitSha: process.env.GITHUB_SHA,
+  gitSha: process.env.EVIDENCE_SOURCE_SHA,
   generatedAt: new Date().toISOString(),
   documentCount: browser.playground.indexedDocuments,
   indexVersion: browser.playground.rollback.activeVersion,
+  indexBytes: Number(process.env.ACTIVE_INDEX_BYTES),
   indexLifecycleMs: browser.playground.indexLifecycleMs,
   measuredRequests: load.configuration.requests,
   concurrency: load.configuration.concurrency,
@@ -125,6 +139,9 @@ writeFileSync(`${out}/summary.json`, JSON.stringify({
   errorRate: load.measurement.errorRate,
   throughputRps: load.measurement.throughputRps,
   wallLatencyMs: load.measurement.wallLatencyMs,
+  measuredDurationMs: load.measurement.durationMs,
+  backupDurationMs: Number(process.env.BACKUP_DURATION_MS),
+  restoreDurationMs: Number(process.env.RESTORE_DURATION_MS),
   restoredLiveDocuments: 8,
   restoredActiveIndexes: 1,
   immutableSegmentHashesMatch: true,
