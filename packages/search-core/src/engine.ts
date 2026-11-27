@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { SearchRequest } from "@searchforge/shared";
 import { Analyzer } from "./analyzer.js";
-import { buildDeletionDictionary, damerauLevenshtein, deletionVariants, lowerBound } from "./distance.js";
+import { buildDeletionDictionary, damerauLevenshtein, deletionVariants, lowerBound, MAX_TYPO_TOKEN_LENGTH } from "./distance.js";
 import type { AnalyzerToken, CoreSearchResponse, SearchCore, SearchDocument, Segment, TermPostings } from "./types.js";
 
 type ParsedQuery = {
@@ -229,13 +229,15 @@ export class SegmentSearchEngine implements SearchCore {
   }
 
   private typoCandidates(term: string, maxDistance: number, limit = 12): string[] {
-    if (term.length < this.segment.settings.typoTolerance.minTokenLength) return [];
+    if (term.length < this.segment.settings.typoTolerance.minTokenLength || term.length > MAX_TYPO_TOKEN_LENGTH) return [];
 
     const candidateTerms = new Set<string>();
     for (const variant of deletionVariants(term, maxDistance)) {
       if (!Object.hasOwn(this.typoDeletes, variant)) continue;
       for (const candidate of this.typoDeletes[variant] ?? []) {
-        if (Math.abs(candidate.length - term.length) <= maxDistance) candidateTerms.add(candidate);
+        if (candidate.length <= MAX_TYPO_TOKEN_LENGTH && Math.abs(candidate.length - term.length) <= maxDistance) {
+          candidateTerms.add(candidate);
+        }
       }
     }
 

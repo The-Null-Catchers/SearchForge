@@ -48,6 +48,15 @@ describe("SegmentSearchEngine", () => {
     expect(result.hits[0]?.id).toBe("a");
   });
 
+  it("keeps long terms searchable without building typo candidates for them", () => {
+    const term = "a".repeat(68) + "documentation";
+    const indexed = buildSegment([{ id: "long", title: term }], settings, { version: "v1" });
+    const longTermEngine = new SegmentSearchEngine(indexed);
+    expect(Object.keys(indexed.typoDeletes ?? {})).toHaveLength(0);
+    expect(longTermEngine.search(searchRequestSchema.parse({ query: term })).hits[0]?.id).toBe("long");
+    expect(longTermEngine.search(searchRequestSchema.parse({ query: `x${term.slice(1)}` })).total).toBe(0);
+  });
+
   it("uses the persisted deletion dictionary without scanning the full vocabulary", () => {
     const guardedVocabulary = new Proxy(segment.vocabulary, {
       get(target, property, receiver) {

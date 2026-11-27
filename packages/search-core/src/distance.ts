@@ -1,3 +1,7 @@
+// Bound the quadratic work for deletion candidates. Long terms remain in the
+// ordinary index for exact, phrase and prefix retrieval.
+export const MAX_TYPO_TOKEN_LENGTH = 64;
+
 export function damerauLevenshtein(a: string, b: string, maxDistance = Number.POSITIVE_INFINITY): number {
   if (a === b) return 0;
   if (Math.abs(a.length - b.length) > maxDistance) return maxDistance + 1;
@@ -77,6 +81,7 @@ export function buildDeletionDictionary(
   const dictionary = new Map<string, string[]>();
 
   for (const term of vocabulary) {
+    if (term.length > MAX_TYPO_TOKEN_LENGTH) continue;
     for (const variant of deletionVariants(term, maxDistance)) {
       const values = dictionary.get(variant);
       if (values) {
