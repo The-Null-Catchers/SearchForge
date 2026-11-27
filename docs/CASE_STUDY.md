@@ -10,7 +10,7 @@ The TypeScript monorepo separates a Next.js control plane, a Fastify REST API, a
 
 The indexer tokenizes each searchable field and stores term frequencies and positional postings. The search core evaluates query terms against postings, computes per-field BM25 with configurable boosts, and returns explain components. The corpus document count and per-term document frequency determine IDF. Field lengths and average field length normalize term frequency, and configured field boosts scale each contribution. Phrase verification preserves positional gaps left by removed stop words, meaning the omitted words themselves are not compared. Arabic processing includes Unicode normalization, configurable Alef/Ya/taa marbuta handling, diacritic and tatweel removal, and optional light stemming. English uses lightweight suffix stemming. Neither analyzer is a general-purpose morphological or semantic language model.
 
-The engine also supports quoted phrases through positional postings, prefix expansion, bounded deletion-dictionary typo candidates, project synonyms, compound filters, facets, and safe highlight ranges. A future hybrid/vector retriever is possible, but no vector-search capability is claimed.
+The engine also supports quoted phrases through positional postings, prefix expansion, deletion-dictionary typo candidates bounded to 64 UTF-16 code units, project synonyms, compound filters, facets, and safe highlight ranges. A future hybrid/vector retriever is possible, but no vector-search capability is claimed.
 
 ## Immutable releases and failure handling
 

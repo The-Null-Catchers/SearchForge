@@ -10,3 +10,5 @@ node_modules
 !.env.example
 storage
 *.log
+artifacts
+docs/images/portfolio

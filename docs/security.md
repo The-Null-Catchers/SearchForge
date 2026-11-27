@@ -23,3 +23,11 @@ Search and autocomplete accept the optional `X-SearchForge-Project-Id` header.
 The Playground sets it to the selected project. The server validates the key and
 requires its project to match before charging per-key or project usage and
 returning content. The key remains the authorization source for public clients.
+
+## Dependency review
+
+The November 27 portfolio pass updated the lockfile for the production
+advisories reported by `pnpm audit --prod`. A second audit checked 210
+production dependencies and reported zero advisories. The frozen installation
+and the runtime suites are the compatibility checks for those updates. Repeat
+the audit at release time as registry advisory data changes.
