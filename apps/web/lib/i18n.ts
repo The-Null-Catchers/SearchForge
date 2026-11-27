@@ -421,6 +421,9 @@ const arabic: Record<string, string> = {
   "Saved. Index rebuild job {id}.": "حُفظت الإعدادات. معرّف مهمة إعادة بناء الفهرس {id}.",
   "Saved. No index rebuild was required.": "حُفظت الإعدادات. لم تكن إعادة بناء الفهرس مطلوبة.",
   "Type {slug} to confirm": "اكتب {slug} للتأكيد",
+  "Reload index data": "إعادة تحميل بيانات الفهرس",
+  "Loading indexes…": "جارٍ تحميل الفهارس…",
+  "This project has no indexes.": "لا توجد فهارس في هذا المشروع.",
   "BM25 ranking": "ترتيب BM25", "REST and SDKs": "واجهة REST وحزم SDK"
 };
 

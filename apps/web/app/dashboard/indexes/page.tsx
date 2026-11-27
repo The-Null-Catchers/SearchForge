@@ -31,7 +31,9 @@ function ProjectIndexes({ projectId }: { projectId: string | null }) {
     <div className="eyebrow">{t("Immutable segments")}</div>
     <h1>{t("Index explorer")}</h1>
     <p className="muted">{t("Inspect and safely edit stored documents, compare them with the active immutable search version, and rebuild without search downtime.")}</p>
-    {ex.error && <p role="alert" style={{ color: "var(--danger)" }}>{t(ex.error)}</p>}
+    {ex.error && <div role="alert" className="toolbar" style={{ color: "var(--danger)" }}>{t(ex.error)}
+      <button className="btn" onClick={ex.reload}>{t("Reload index data")}</button>
+    </div>}
 
     <div className="card card-body toolbar" style={{ marginTop: 20 }}>
       <label>{t("Index")} <select className="input" value={ex.indexId} disabled={ex.busy} onChange={event => ex.selectIndex(event.target.value)}>
@@ -120,6 +122,8 @@ function ProjectIndexes({ projectId }: { projectId: string | null }) {
         </div>}
       </section>
     </div>}
-    {!ex.indexes.length && !ex.loading && <div className="card empty" style={{ marginTop: 14 }}>{t("Create a project to start exploring its index.")}</div>}
+    {!ex.indexes.length && !ex.error && <div className="card empty" style={{ marginTop: 14 }} role="status">
+      {t(ex.loading ? "Loading indexes…" : projectId ? "This project has no indexes." : "Create a project to start exploring its index.")}
+    </div>}
   </div>;
 }

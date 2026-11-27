@@ -327,7 +327,9 @@ async function verifySearchPlayground(page) {
   await results.getByText(/Expanded ecmascript.*javascript/).waitFor();
   await capture(page, "playground-synonym.png");
 
+  await page.route(`**/v1/projects/${docs.id}/resources`, route => route.abort(), { times: 1 });
   await page.getByRole("link", { name: "Indexes", exact: true }).click();
+  await page.getByRole("button", { name: "Reload index data", exact: true }).click();
   const source = page.getByRole("row").filter({ hasText: "search-en" });
   await source.getByRole("button", { name: "Inspect", exact: true }).click();
   const editor = page.getByLabel("Editable document JSON");
