@@ -384,6 +384,21 @@ async function verifySearchPlayground(page) {
   await capture(page, "dashboard-analytics-rtl-mobile.png");
   await page.getByRole("button", { name: "تغيير اللغة", exact: true }).click();
   assert(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), "LTR analytics overflows the mobile viewport");
+  await page.getByRole("button", { name: "Switch language", exact: true }).click();
+  for (const [link, heading] of [
+    ["الفهارس", "مستكشف الفهارس"], ["المصادر", "المصادر والزاحف"],
+    ["الإعدادات", "الإعدادات"], ["مفاتيح API", "مفاتيح API"]
+  ]) {
+    await page.getByRole("link", { name: link, exact: true }).click();
+    await page.getByRole("heading", { name: heading, exact: true }).waitFor();
+  }
+  const scopedKey = page.getByRole("cell", { name: "Browser playground", exact: true });
+  await scopedKey.waitFor();
+  await page.getByLabel("المشروع", { exact: true }).selectOption(labs.id);
+  await page.getByText("يمكن للمسؤولين والمالكين إدارة مفاتيح API.", { exact: true }).waitFor();
+  assert(await scopedKey.count() === 0, "Previous project's key metadata remained visible after switching roles");
+  await page.getByLabel("المشروع", { exact: true }).selectOption(docs.id);
+  await page.getByRole("button", { name: "تغيير اللغة", exact: true }).click();
   await page.setViewportSize({ width: 1440, height: 1000 });
   return { indexedDocuments: documents.length, indexVersion: arabic.indexVersion, arabicHits: arabic.hits.map(hit => hit.id), typoTopHit: typo.hits[0].id,
     overviewIsolation: true,
