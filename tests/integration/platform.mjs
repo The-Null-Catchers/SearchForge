@@ -102,6 +102,8 @@ try {
     assert.equal((await app.inject({ method: 'POST', url: '/v1/indexes/docs/search', headers, payload: { query: 'javascript' } })).statusCode, expected);
     assert.equal((await app.inject({ method: 'GET', url: '/v1/indexes/docs/autocomplete?q=java', headers })).statusCode, expected);
   }
+  const { keys } = await request('GET', `/v1/projects/${project.id}/api-key-controls`, undefined, owner.accessToken);
+  assert.ok(keys.find(key => key.kind === 'search')?.lastUsedAt, 'Successful requests should record when the key was used');
   const foreignEvent = (await pool.query('INSERT INTO search_events(project_id, index_id, query, result_count, latency_ms) VALUES ($1,$2,$3,1,1) RETURNING id', [foreignProject.id, foreignProject.index.id, result.query])).rows[0].id;
   async function clickRequest(payload) {
     return app.inject({ method: 'POST', url: '/v1/analytics/click', payload,
