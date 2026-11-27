@@ -69,6 +69,12 @@ const result = await search.search("distributed systems", { facets: ["metadata.c
 
 The [SDK guide](docs/sdk.md) includes JavaScript/TypeScript and Dart/Flutter install, query, autocomplete, pagination and error-handling examples. Both packages can be used from the workspace.
 
+## Product walkthrough
+
+[![SearchForge Dashboard with eight indexed demo documents](docs/images/portfolio/dashboard-overview.png)](docs/images/portfolio/)
+
+[Arabic results](docs/images/portfolio/playground-arabic.png) · [BM25 explanation](docs/images/portfolio/playground-bm25.png) · [Index rollback](docs/images/portfolio/index-version-rollback.png) · [Analytics](docs/images/portfolio/dashboard-analytics.png) · [Recording](docs/images/portfolio/searchforge-demo.mp4)
+
 ## Verification and evidence
 
 ```bash
@@ -82,7 +88,7 @@ node --test tests/load/*.test.mjs
 
 The [integration setup](docs/development.md) and [CI workflow](.github/workflows/ci.yml) cover migrations, PostgreSQL/Redis/SMTP integration, Dart analysis and tests, security baseline, Compose, Chromium, and isolated restore. See the [browser guide](docs/browser-e2e.md) for the real seeded walkthrough and its captures.
 
-The [historical CI baseline](docs/portfolio-baseline.md) records 120 successful search requests across a small eight-document synthetic corpus. See [benchmarking](docs/benchmarking.md) and [release evidence](docs/release-evidence.md) for reproducible workloads, recovery checks and environment limits.
+The [historical CI baseline](docs/portfolio-baseline.md) records 120 successful search requests across a small eight-document synthetic corpus. See [measured local and CI results](docs/evidence/), [benchmarking](docs/benchmarking.md), and [release evidence](docs/release-evidence.md) for workloads, recovery checks and environment limits.
 
 ## Security and limitations
 

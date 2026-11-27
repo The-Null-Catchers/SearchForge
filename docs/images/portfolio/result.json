@@ -1,0 +1,37 @@
+{
+  "status": "passed",
+  "gitSha": "aaec7fc3a450bf033cadba98a5e12aca0ae7eaed",
+  "url": "http://127.0.0.1:55280/dashboard/analytics",
+  "projectOptions": 2,
+  "playground": {
+    "indexedDocuments": 8,
+    "indexVersion": "1",
+    "arabicHits": [
+      "search-ar"
+    ],
+    "typoTopHit": "search-en",
+    "overviewIsolation": true,
+    "indexLifecycleMs": {
+      "importToJobCompletedMs": 604,
+      "editToSearchVisibleMs": 3528,
+      "activationAcknowledgedMs": 378,
+      "rollbackToSearchVisibleMs": 1577
+    },
+    "synonym": {
+      "alias": "ecmascript",
+      "beforeHits": 0,
+      "afterTopHit": "search-en"
+    },
+    "rollback": {
+      "originalVersion": "1",
+      "rebuiltVersion": "2",
+      "activeVersion": "1",
+      "restoredTitle": "JavaScript search engine"
+    }
+  },
+  "accountSecurityRoutes": [
+    "forgot-password",
+    "reset-password",
+    "verify-email"
+  ]
+}

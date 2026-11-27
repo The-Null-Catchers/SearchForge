@@ -20,11 +20,12 @@ The current release smoke verifies:
 - a search-only key denied document ingestion and a Docs Search key denied while Product Catalog is selected
 - synonyms, document editing, activation and rollback
 - Analytics fits a 390 px viewport in both Arabic and English
+- Arabic management routes load at mobile width, index data can retry after a failed request, and a viewer never sees the previous project’s API key rows
 - the Usage screen cancels stale quota requests during project switching, keeps the selected tenant's metrics after a delayed response, and respects viewer read-only permissions
 - Arabic quota labels and number formatting render correctly in RTL
 - unexpected page-level JavaScript exceptions fail the job
 
-The test stores screenshots of the real landing page, imported-document overview, Arabic results before explanation expansion, expanded BM25 details, typo and synonym queries, version rollback and populated analytics. Password inputs and displayed secret elements are masked. On failure it stores a masked failure screenshot plus browser error details. CI uploads these artifacts for 14 days. The result JSON includes the source SHA when supplied and browser-observed index lifecycle timings. These timings include job polling, navigation and UI verification; they are not raw index-builder throughput.
+The [portfolio gallery](images/portfolio/) includes curated captures and a browser recording. The test stores screenshots of the real landing page, imported-document overview, Arabic results before explanation expansion, expanded BM25 details, typo and synonym queries, version rollback and populated analytics. Password inputs and displayed secret elements are masked. On failure it stores a masked failure screenshot plus browser error details. CI uploads these artifacts for 14 days. The result JSON includes the source SHA when supplied and browser-observed index lifecycle timings. These timings include job polling, navigation and UI verification; they are not raw index-builder throughput.
 
 ## Execution model
 

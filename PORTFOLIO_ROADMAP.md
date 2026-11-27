@@ -15,8 +15,8 @@ The repository already implements TypeScript lexical retrieval with Arabic/Engli
 | P0 | Playground autocomplete, facet actions, highlights, language/published filters | Merged in #78 | Chromium E2E and API helper tests passed |
 | P0 | Reproducible bilingual corpus, typo, synonym, edit and rollback | Already implemented | Existing browser E2E and fixtures |
 | P0 | CI build, unit, integration, Dart and container smoke | Passed on #80 final head | [#80 successful CI](https://github.com/The-Null-Catchers/SearchForge/actions/runs/44814633377) |
-| P0 | Real screenshots from the final running revision | Pending | Capture under docs/images/portfolio |
-| P0 | Final environment-specific load and restore evidence | Pending | docs/release-evidence.md |
+| P0 | Genuine screenshots and recording | Captured | [Gallery and runtime receipt](docs/images/portfolio/) |
+| P0 | Native load and disposable Docker restore | Measured | [Portfolio evidence](docs/evidence/) |
 | P1 | Relevance judgments and comparative ranking evaluation | Merged in #79 | [#79 successful CI](https://github.com/The-Null-Catchers/SearchForge/actions/runs/44809952170); `node scripts/evaluate-relevance.mjs` after `pnpm build` |
 | P1 | Query-scoped postings lookup and correct phrase explanations | Merged in #80 | [#80 successful CI](https://github.com/The-Null-Catchers/SearchForge/actions/runs/44814633377); performance comparison still pending |
 | P1 | Arabic coverage of secondary management screens | Implemented for principal controls | RTL browser assertions; raw diagnostic text remains source language |

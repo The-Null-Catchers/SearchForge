@@ -1,4 +1,6 @@
-# SearchForge portfolio recording shot list
+# SearchForge portfolio recording and shot list
+
+[Watch the browser recording](images/portfolio/searchforge-demo.mp4) · [Screenshot gallery and source revision](images/portfolio/)
 
 Record only from a running disposable SearchForge environment using synthetic data. Never show plaintext API keys, session tokens, or customer data.
 

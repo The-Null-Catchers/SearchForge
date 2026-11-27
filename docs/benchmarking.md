@@ -40,3 +40,5 @@ SEARCHFORGE_URL=http://127.0.0.1 node scripts/benchmark-demo.mjs
 The driver creates a synthetic organization and separate 8- and 800-document projects. For the larger corpus, each fixture row is repeated 100 times with unique IDs and a numeric title suffix. Each corpus is loaded once and queried at concurrency 1 and 12, with eight warmup and 45 measured requests per scenario. The query mix cycles through JavaScript, distributed systems and two Arabic queries. Run this on a fresh stack to keep unrelated traffic out of the default global rate-limit window.
 
 The driver records the active index size, index job runtime, import-to-completion time including queue/polling, client concurrency and raw request measurements. It includes the source SHA and load client hardware. For containers, also record `docker version`, `docker compose version` and service resource limits. The 800-document corpus stresses common postings and does not model a diverse production vocabulary.
+
+See the [measured portfolio scenarios and raw data](evidence/).

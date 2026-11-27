@@ -1,0 +1,50 @@
+{
+  "generatedAt": "2026-11-27T13:27:50.763Z",
+  "provenance": {
+    "sourceSha": "aaec7fc3a450bf033cadba98a5e12aca0ae7eaed",
+    "corpusDescription": "1 copies of the eight-document bilingual fixture",
+    "hardwareDescription": null,
+    "environmentDescription": "Omarchy 4.5.0, native Caddy 2.11.9, PostgreSQL 17.12 and Redis 7.4.9, API/indexer and Node load generator on the same host"
+  },
+  "target": {
+    "baseUrl": "http://127.0.0.1:55280",
+    "indexSlug": "docs"
+  },
+  "configuration": {
+    "requests": 45,
+    "concurrency": 12,
+    "warmupRequests": 8,
+    "timeoutMs": 10000,
+    "queries": 4
+  },
+  "measurement": {
+    "startedAt": "2026-11-27T13:27:49.988Z",
+    "finishedAt": "2026-11-27T13:27:50.763Z",
+    "durationMs": 775.59,
+    "throughputRps": 58.02,
+    "successes": 45,
+    "failures": 0,
+    "errorRate": 0,
+    "wallLatencyMs": {
+      "p50": 171.28,
+      "p95": 300.33,
+      "p99": 343.46,
+      "max": 343.46
+    },
+    "engineLatencyMs": {
+      "p50": 1,
+      "p95": 2.31,
+      "p99": 2.79,
+      "max": 2.79
+    },
+    "statusCounts": {
+      "200": 45
+    },
+    "errorCounts": {}
+  },
+  "thresholds": {
+    "maxErrorRate": 0,
+    "maxP95Ms": null,
+    "passed": true
+  }
+}
